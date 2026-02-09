@@ -1,0 +1,24 @@
+# EDA 工具版本锁定
+# 确保所有团队成员和 CI 使用相同的工具版本。
+# 升级工具时更新此文件，并通知团队。
+
+python: "3.10"
+
+eda_tools:
+  vcs:
+    version: "U-2023.03-SP2"
+    install_path: "/opt/synopsys/vcs"
+  xcelium:
+    version: "23.09"
+    install_path: "/opt/cadence/xcelium"
+  verilator:
+    version: "5.024"
+    install_path: "/opt/verilator"
+  verdi:
+    version: "U-2023.03-SP2"
+    install_path: "/opt/synopsys/verdi"
+
+# License 服务器（通过 LM_LICENSE_FILE 设置）
+license:
+  synopsys: "27000@lic-server"
+  cadence: "5280@lic-server"

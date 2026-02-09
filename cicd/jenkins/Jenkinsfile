@@ -1,0 +1,201 @@
+// Jenkinsfile - AI Chip Verification Regression Pipeline
+//
+// Supports 3 trigger modes:
+//   1. Dependency change trigger  - Upstream job notifies when dep packages update
+//   2. Scheduled smoke test       - Periodic (nightly/weekly) smoke regression
+//   3. Manual run with version    - Manual trigger with selectable dep versions
+//
+// Required Jenkins plugins: see cicd/jenkins/README.md
+
+pipeline {
+    agent {
+        label 'eda'
+    }
+
+    // =========================================================================
+    // Trigger configuration
+    // =========================================================================
+    triggers {
+        // Scheduled smoke: nightly at 02:00 (weekdays), full regression on Sunday 00:00
+        cron('H 2 * * 1-5\nH 0 * * 0')
+
+        // Dependency change trigger: upstream job pushes a notification via
+        // Generic Webhook Trigger or "Build after other projects are built".
+        // Option A: upstream job name trigger (uncomment and set job name):
+        // upstream(upstreamProjects: 'dep-package-build', threshold: hudson.model.Result.SUCCESS)
+        //
+        // Option B: Generic Webhook Trigger plugin (configured in Jenkins UI)
+        // - token: 'aieffect-dep-update'
+        // - POST body contains: { "dep_name": "...", "dep_version": "..." }
+    }
+
+    parameters {
+        // --- Trigger mode ---
+        choice(
+            name: 'TRIGGER_MODE',
+            choices: ['auto', 'smoke', 'full', 'manual'],
+            description: '''Trigger mode:
+  auto  - Auto-detected (dependency change or scheduled)
+  smoke - Quick smoke test suite
+  full  - Full regression suite
+  manual - Manual run with specified dependency versions'''
+        )
+
+        // --- Test suite ---
+        string(name: 'SUITE', defaultValue: 'default', description: 'Test suite name (overrides TRIGGER_MODE default)')
+        string(name: 'PARALLEL', defaultValue: '4', description: 'Number of parallel jobs')
+        string(name: 'CONFIG', defaultValue: 'configs/default.yml', description: 'Config file path')
+
+        // --- Dependency version selection (for manual mode) ---
+        string(
+            name: 'DEP_VERSIONS',
+            defaultValue: '',
+            description: '''Dependency versions to use (YAML format), e.g.:
+  model_lib: v2.1.0
+  firmware: v1.3.2
+  testbench_ip: v0.9.0
+Leave empty to use versions from deps/tool_versions.yml'''
+        )
+
+        // --- Dependency change info (auto-populated by upstream trigger) ---
+        string(name: 'CHANGED_DEP_NAME', defaultValue: '', description: '[Auto] Name of changed dependency (set by upstream trigger)')
+        string(name: 'CHANGED_DEP_VERSION', defaultValue: '', description: '[Auto] New version of changed dependency (set by upstream trigger)')
+    }
+
+    environment {
+        PYTHONPATH = "${WORKSPACE}"
+    }
+
+    options {
+        timestamps()
+        timeout(time: 6, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+    }
+
+    stages {
+        // =====================================================================
+        // Stage 1: Determine effective trigger mode and suite
+        // =====================================================================
+        stage('Resolve Trigger') {
+            steps {
+                script {
+                    // Determine effective mode
+                    if (params.TRIGGER_MODE == 'auto') {
+                        if (params.CHANGED_DEP_NAME?.trim()) {
+                            env.EFFECTIVE_MODE = 'dep_change'
+                            env.EFFECTIVE_SUITE = params.SUITE ?: 'default'
+                            echo "Trigger: dependency change (${params.CHANGED_DEP_NAME} -> ${params.CHANGED_DEP_VERSION})"
+                        } else if (currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause')) {
+                            def dayOfWeek = new Date().format('u') as int  // 1=Mon, 7=Sun
+                            if (dayOfWeek == 7) {
+                                env.EFFECTIVE_MODE = 'full'
+                                env.EFFECTIVE_SUITE = 'full'
+                                echo "Trigger: scheduled full regression (Sunday)"
+                            } else {
+                                env.EFFECTIVE_MODE = 'smoke'
+                                env.EFFECTIVE_SUITE = 'smoke'
+                                echo "Trigger: scheduled nightly smoke"
+                            }
+                        } else {
+                            env.EFFECTIVE_MODE = 'smoke'
+                            env.EFFECTIVE_SUITE = params.SUITE ?: 'default'
+                            echo "Trigger: manual (default to smoke)"
+                        }
+                    } else {
+                        env.EFFECTIVE_MODE = params.TRIGGER_MODE
+                        env.EFFECTIVE_SUITE = params.SUITE ?: params.TRIGGER_MODE
+                        echo "Trigger: manual mode=${params.TRIGGER_MODE}"
+                    }
+                }
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Setup') {
+            steps {
+                sh 'make setup'
+            }
+        }
+
+        // =====================================================================
+        // Stage 2: Apply dependency versions
+        // =====================================================================
+        stage('Apply Dependencies') {
+            steps {
+                script {
+                    // Manual mode: apply user-specified versions
+                    if (params.DEP_VERSIONS?.trim()) {
+                        echo "Applying manual dependency versions..."
+                        writeFile file: 'deps/override_versions.yml', text: params.DEP_VERSIONS
+                        sh 'python scripts/apply_deps.py --override deps/override_versions.yml'
+                    }
+                    // Dep change mode: update the specific changed dependency
+                    else if (env.EFFECTIVE_MODE == 'dep_change' && params.CHANGED_DEP_NAME?.trim()) {
+                        echo "Updating dependency: ${params.CHANGED_DEP_NAME} -> ${params.CHANGED_DEP_VERSION}"
+                        sh """
+                            python scripts/apply_deps.py \
+                                --dep-name "${params.CHANGED_DEP_NAME}" \
+                                --dep-version "${params.CHANGED_DEP_VERSION}"
+                        """
+                    }
+                    // Otherwise: use default versions from deps/tool_versions.yml
+                    else {
+                        echo "Using default dependency versions from deps/tool_versions.yml"
+                    }
+                }
+            }
+        }
+
+        stage('Lint') {
+            when {
+                expression { env.EFFECTIVE_MODE != 'dep_change' }
+            }
+            steps {
+                sh 'make lint'
+            }
+        }
+
+        // =====================================================================
+        // Stage 3: Run regression
+        // =====================================================================
+        stage('Regression') {
+            steps {
+                sh """
+                    python -m framework.cli run \
+                        "${env.EFFECTIVE_SUITE}" \
+                        -p "${params.PARALLEL}" \
+                        -c "${params.CONFIG}"
+                """
+            }
+        }
+
+        stage('Report') {
+            steps {
+                sh 'make report'
+                junit allowEmptyResults: true, testResults: 'results/report.xml'
+                archiveArtifacts artifacts: 'results/report.html', allowEmptyArchive: true
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'results/**', allowEmptyArchive: true
+        }
+        failure {
+            echo "Regression FAILED [mode=${env.EFFECTIVE_MODE}, suite=${env.EFFECTIVE_SUITE}]"
+            // Uncomment to enable email notification:
+            // mail to: 'team@example.com',
+            //      subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER} [${env.EFFECTIVE_MODE}]",
+            //      body: "Mode: ${env.EFFECTIVE_MODE}\nSuite: ${env.EFFECTIVE_SUITE}\nCheck: ${env.BUILD_URL}"
+        }
+        success {
+            echo "Regression PASSED [mode=${env.EFFECTIVE_MODE}, suite=${env.EFFECTIVE_SUITE}]"
+        }
+    }
+}

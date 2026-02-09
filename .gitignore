@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test & Coverage
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# mypy
+.mypy_cache/
+
+# ruff
+.ruff_cache/
+
+# EDA tool outputs (do NOT commit simulation artifacts)
+*.vpd
+*.fsdb
+*.vcd
+*.saif
+*.log
+*.wlf
+simv
+simv.daidir/
+csrc/
+DVEfiles/
+xcelium.d/
+INCA_libs/
+waves.shm/
+cov_work/
+urgReport/
+
+# Test data (large files managed by LFS or external storage)
+testdata/golden/*.bin
+testdata/vectors/*.dat
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

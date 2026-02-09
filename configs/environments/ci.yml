@@ -1,0 +1,8 @@
+# CI 环境覆盖配置
+
+parallel: 4
+result_dir: "results"
+
+logging:
+  level: "INFO"
+  json_output: true

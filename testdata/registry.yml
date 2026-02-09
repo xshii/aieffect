@@ -1,0 +1,22 @@
+# 测试数据注册表
+# 所有测试数据制品的统一清单。
+# 用于追踪版本、来源和位置。
+
+golden_references:
+  # - name: conv2d_basic
+  #   path: testdata/golden/conv2d_basic.bin
+  #   model_version: "v1.0.0"
+  #   generated_by: "model-repo commit abc1234"
+  #   sha256: "<校验和>"
+  #   description: "基本 conv2d 运算的 golden 输出"
+
+test_vectors:
+  # - name: conv2d_input
+  #   path: testdata/vectors/conv2d_input.dat
+  #   format: "binary_float32"
+  #   shape: [1, 3, 224, 224]
+  #   description: "conv2d 测试的输入张量"
+
+# 大文件建议：
+# - Git LFS: git lfs track "testdata/golden/*.bin"
+# - 外部存储: S3/MinIO/NFS + 下载脚本

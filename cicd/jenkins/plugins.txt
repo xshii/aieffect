@@ -1,0 +1,15 @@
+workflow-aggregator
+git
+credentials-binding
+timestamper
+build-timeout
+junit
+htmlpublisher
+pipeline-stage-view
+email-ext
+ws-cleanup
+throttle-concurrents
+ssh-agent
+parameterized-trigger
+matrix-project
+lockable-resources

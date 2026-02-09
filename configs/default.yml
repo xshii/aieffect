@@ -1,0 +1,18 @@
+# aieffect 全局配置
+
+# 套件定义文件所在目录
+suite_dir: "testdata/configs"
+
+# 默认并行度
+parallel: 1
+
+# 结果输出目录
+result_dir: "results"
+
+# 日志配置
+logging:
+  level: "INFO"
+  json_output: false  # CI 环境下设为 true
+
+# 要加载的插件（模块路径）
+plugins: []

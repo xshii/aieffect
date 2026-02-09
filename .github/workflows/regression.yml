@@ -1,0 +1,52 @@
+name: Regression
+
+on:
+  # Manual trigger with parameters
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Test suite name"
+        required: true
+        default: "default"
+      parallel:
+        description: "Number of parallel jobs"
+        required: false
+        default: "4"
+      config:
+        description: "Config file path"
+        required: false
+        default: "configs/default.yml"
+
+  # Scheduled nightly regression
+  schedule:
+    - cron: "0 2 * * *"  # 02:00 UTC daily
+
+jobs:
+  regression:
+    # Use self-hosted runner if EDA tools are needed on internal network
+    runs-on: self-hosted
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: make setup
+
+      - name: Run regression
+        run: |
+          python -m framework.cli run \
+            "${{ github.event.inputs.suite || 'default' }}" \
+            -p "${{ github.event.inputs.parallel || '4' }}" \
+            -c "${{ github.event.inputs.config || 'configs/default.yml' }}"
+
+      - name: Generate report
+        if: always()
+        run: make report
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results-${{ github.run_id }}
+          path: results/

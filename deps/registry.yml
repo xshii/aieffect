@@ -1,0 +1,48 @@
+# 依赖包注册表
+#
+# 所有组件依赖的统一清单。
+# 每个依赖包含：名称、负责人（发布方）、版本、来源类型。
+#
+# 来源类型：
+#   - api:  通过 API 从制品服务器下载
+#   - lfs:  存储在本仓库 Git LFS 中（deps/packages/<name>/）
+#   - url:  直接 URL 下载
+#
+# 此文件是"我们用什么版本"的唯一可信来源。
+
+packages:
+
+  # 示例：AI 模型推理库（模型团队发布）
+  # model_lib:
+  #   owner: model-team
+  #   version: v2.1.0
+  #   source: api
+  #   api_url: "https://artifact.internal.com/api/v1/packages/model_lib"
+  #   checksum_sha256: "abc123..."
+  #   description: "NPU 模型推理库"
+
+  # 示例：固件二进制（固件团队发布）
+  # firmware:
+  #   owner: firmware-team
+  #   version: v1.3.2
+  #   source: api
+  #   api_url: "https://artifact.internal.com/api/v1/packages/firmware"
+  #   checksum_sha256: "def456..."
+  #   description: "NPU 固件"
+
+  # 示例：Testbench IP（手动通过 LFS 上传）
+  # testbench_ip:
+  #   owner: verification-team
+  #   version: v0.9.0
+  #   source: lfs
+  #   lfs_path: "deps/packages/testbench_ip/v0.9.0/"
+  #   description: "可复用的 testbench IP 组件"
+
+  # 示例：参考模型输出（直接 URL 下载）
+  # ref_model_golden:
+  #   owner: model-team
+  #   version: v1.0.0
+  #   source: url
+  #   url: "https://storage.internal.com/golden/ref_model_v1.0.0.tar.gz"
+  #   checksum_sha256: "789abc..."
+  #   description: "参考模型的 golden 输出"

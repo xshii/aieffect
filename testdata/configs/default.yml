@@ -1,0 +1,20 @@
+# 默认测试套件定义
+# 每个用例指定运行什么、如何运行
+
+suite_name: default
+description: "默认冒烟测试套件"
+
+testcases:
+  - name: sanity_check
+    timeout: 60
+    tags: [smoke, sanity]
+    args:
+      description: "基本健全性测试"
+
+  # 在此添加更多用例：
+  # - name: conv2d_basic
+  #   timeout: 3600
+  #   tags: [conv, basic]
+  #   args:
+  #     cmd: "make run_conv2d"
+  #     golden: "testdata/golden/conv2d_basic.bin"
