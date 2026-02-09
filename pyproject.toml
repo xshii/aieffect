@@ -8,6 +8,7 @@ dependencies = [
     "click>=8.0",
     "rich>=13.0",
     "junitparser>=3.0",
+    "flask>=3.0",
 ]
 
 [project.optional-dependencies]

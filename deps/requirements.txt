@@ -4,3 +4,4 @@ pyyaml>=6.0,<7
 click>=8.0,<9
 rich>=13.0,<14
 junitparser>=3.0,<4
+flask>=3.0,<4
