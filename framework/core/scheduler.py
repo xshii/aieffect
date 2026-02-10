@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -77,20 +77,19 @@ class Scheduler:
             )
 
     def run_all(self, cases: list[TestCase]) -> list[TaskResult]:
-        """并行控制下执行所有用例"""
-        results: list[TaskResult] = []
-
+        """并行控制下执行所有用例，返回结果与输入顺序一致"""
         if self.max_workers == 1:
+            results: list[TaskResult] = []
             for case in cases:
                 logger.info("执行: %s", case.name)
                 results.append(self._execute_one(case))
-        else:
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                future_map = {executor.submit(self._execute_one, c): c for c in cases}
-                for future in as_completed(future_map):
-                    case = future_map[future]
-                    result = future.result()
-                    logger.info("完成: %s -> %s (%.1f秒)", case.name, result.status, result.duration)
-                    results.append(result)
+            return results
 
-        return results
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = [executor.submit(self._execute_one, c) for c in cases]
+            results = []
+            for case, future in zip(cases, futures):
+                result = future.result()
+                logger.info("完成: %s -> %s (%.1f秒)", case.name, result.status, result.duration)
+                results.append(result)
+            return results

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 from pathlib import Path
+from xml.sax.saxutils import quoteattr as xml_quoteattr
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +65,18 @@ def _gen_html(results: list[dict], result_dir: str) -> str:
     for r in results:
         status = r.get("status", "unknown")
         css_class = {"passed": "pass", "failed": "fail", "error": "error"}.get(status, "")
+        name = html.escape(str(r.get("name", "")))
+        msg = html.escape(str(r.get("message", "")))
         rows += (
             f'<tr class="{css_class}">'
-            f'<td>{r.get("name", "")}</td>'
-            f"<td>{status}</td>"
+            f"<td>{name}</td>"
+            f"<td>{html.escape(status)}</td>"
             f'<td>{r.get("duration", 0):.1f}s</td>'
-            f'<td>{r.get("message", "")}</td>'
+            f"<td>{msg}</td>"
             f"</tr>\n"
         )
 
-    html = f"""<!DOCTYPE html>
+    page = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>aieffect 测试报告</title>
 <style>
   body {{ font-family: monospace; margin: 2em; }}
@@ -90,7 +94,7 @@ def _gen_html(results: list[dict], result_dir: str) -> str:
 </table></body></html>"""
 
     with open(output, "w") as f:
-        f.write(html)
+        f.write(page)
     return str(output)
 
 
@@ -100,23 +104,23 @@ def _gen_junit(results: list[dict], result_dir: str) -> str:
 
     testcases = ""
     for r in results:
-        name = r.get("name", "unknown")
+        name_attr = xml_quoteattr(str(r.get("name", "unknown")))
         duration = r.get("duration", 0)
         status = r.get("status", "unknown")
-        msg = r.get("message", "")
+        msg_attr = xml_quoteattr(str(r.get("message", "")))
 
         if status == "passed":
-            testcases += f'    <testcase name="{name}" time="{duration:.1f}"/>\n'
+            testcases += f"    <testcase name={name_attr} time=\"{duration:.1f}\"/>\n"
         elif status == "failed":
             testcases += (
-                f'    <testcase name="{name}" time="{duration:.1f}">\n'
-                f'      <failure message="{msg}"/>\n'
+                f"    <testcase name={name_attr} time=\"{duration:.1f}\">\n"
+                f"      <failure message={msg_attr}/>\n"
                 f"    </testcase>\n"
             )
         else:
             testcases += (
-                f'    <testcase name="{name}" time="{duration:.1f}">\n'
-                f'      <error message="{msg}"/>\n'
+                f"    <testcase name={name_attr} time=\"{duration:.1f}\">\n"
+                f"      <error message={msg_attr}/>\n"
                 f"    </testcase>\n"
             )
 

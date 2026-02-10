@@ -19,6 +19,7 @@ import hashlib
 import logging
 import shutil
 import subprocess
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,7 +127,9 @@ class DepManager:
             if not pkg.url:
                 raise ValueError(f"依赖包 '{pkg.name}' 未定义 url")
             download_url = pkg.url.replace("{version}", version)
-            filename = download_url.split("/")[-1]
+            filename = download_url.rstrip("/").split("/")[-1]
+            if not filename:
+                raise ValueError(f"无法从 URL 解析文件名: {download_url}")
         else:
             raise ValueError(f"不支持的来源类型: {pkg.source}")
 
@@ -138,7 +141,17 @@ class DepManager:
             return dest
 
         logger.info("  下载: %s", download_url)
-        urllib.request.urlretrieve(download_url, str(dest))
+        try:
+            urllib.request.urlretrieve(download_url, str(dest))
+        except urllib.error.HTTPError as e:
+            dest.unlink(missing_ok=True)
+            raise ConnectionError(f"下载失败 (HTTP {e.code}): {download_url}") from e
+        except urllib.error.URLError as e:
+            dest.unlink(missing_ok=True)
+            raise ConnectionError(f"网络错误: {download_url} - {e.reason}") from e
+        except OSError as e:
+            dest.unlink(missing_ok=True)
+            raise ConnectionError(f"下载 I/O 错误: {download_url} - {e}") from e
         logger.info("  已保存: %s", dest)
         return dest
 
