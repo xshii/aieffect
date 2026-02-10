@@ -6,7 +6,7 @@ import logging
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -24,7 +24,6 @@ class TaskResult:
     duration: float = 0.0  # 秒
     message: str = ""
     log_path: str = ""
-    metrics: dict[str, float] = field(default_factory=dict)
 
 
 class Scheduler:

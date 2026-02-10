@@ -19,6 +19,9 @@ dev = [
     "mypy>=1.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["framework*"]
+
 [project.scripts]
 aieffect = "framework.cli:main"
 

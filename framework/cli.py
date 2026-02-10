@@ -17,10 +17,12 @@ def main() -> None:
 @click.option("--config", "-c", default="configs/default.yml", help="配置文件路径")
 def run(suite: str, parallel: int, config: str) -> None:
     """运行测试套件"""
+    from framework.core.collector import save_results
     from framework.core.runner import TestRunner
 
     runner = TestRunner(config_path=config, parallel=parallel)
-    runner.run_suite(suite)
+    result = runner.run_suite(suite)
+    save_results(result.results)
 
 
 @main.command()
@@ -28,14 +30,13 @@ def run(suite: str, parallel: int, config: str) -> None:
 @click.option("--format", "-f", "fmt", default="html", type=click.Choice(["html", "json", "junit"]))
 def report(result_dir: str, fmt: str) -> None:
     """从结果目录生成测试报告"""
-    from framework.core.reporter import Reporter
+    from framework.core.reporter import generate_report
 
-    reporter = Reporter()
-    reporter.generate(result_dir=result_dir, fmt=fmt)
+    generate_report(result_dir=result_dir, fmt=fmt)
 
 
 @main.command()
-@click.option("--registry", default="deps/registry.yml", help="依赖包注册表路径")
+@click.option("--registry", default="deps/manifest.yml", help="依赖包清单路径")
 @click.option("--name", default=None, help="指定包名（不指定则拉取全部）")
 @click.option("--version", default=None, help="指定版本（覆盖注册表默认版本）")
 def fetch(registry: str, name: str | None, version: str | None) -> None:
@@ -50,7 +51,7 @@ def fetch(registry: str, name: str | None, version: str | None) -> None:
 
 
 @main.command(name="deps")
-@click.option("--registry", default="deps/registry.yml", help="依赖包注册表路径")
+@click.option("--registry", default="deps/manifest.yml", help="依赖包清单路径")
 def list_deps(registry: str) -> None:
     """列出所有已注册的依赖包"""
     from framework.core.dep_manager import DepManager
@@ -84,6 +85,57 @@ def dashboard(port: int) -> None:
     from framework.web.app import run_server
 
     run_server(port=port)
+
+
+@main.command(name="apply-deps")
+@click.option("--override", default=None, help="版本覆盖 YAML 文件")
+@click.option("--dep-name", default=None, help="要更新的依赖名")
+@click.option("--dep-version", default=None, help="新版本号")
+@click.option("--show", is_flag=True, help="显示当前版本")
+@click.option("--base", default="deps/manifest.yml", help="基础版本文件")
+def apply_deps(override: str | None, dep_name: str | None, dep_version: str | None, show: bool, base: str) -> None:
+    """应用依赖版本覆盖（供 Jenkins 流水线调用）"""
+    import logging
+    from pathlib import Path
+
+    import yaml
+
+    logger = logging.getLogger(__name__)
+
+    def _load(path: str) -> dict:
+        p = Path(path)
+        if not p.exists():
+            return {}
+        with open(p) as f:
+            return yaml.safe_load(f) or {}
+
+    if show:
+        deps = _load(base).get("dependencies", {})
+        if not deps:
+            click.echo("未定义任何依赖。")
+            return
+        for name, info in sorted(deps.items()):
+            ver = info.get("version", "未设置") if isinstance(info, dict) else info
+            click.echo(f"  {name}: {ver}")
+    elif override:
+        base_data = _load(base)
+        override_data = _load(override)
+        if override_data:
+            deps = base_data.setdefault("dependencies", {})
+            for name, ver in override_data.items():
+                deps.setdefault(name, {})["version"] = ver
+                logger.info("  %s -> %s", name, ver)
+            with open(base, "w") as f:
+                yaml.dump(base_data, f, default_flow_style=False)
+    elif dep_name and dep_version:
+        base_data = _load(base)
+        deps = base_data.setdefault("dependencies", {})
+        deps.setdefault(dep_name, {})["version"] = dep_version
+        logger.info("  %s -> %s", dep_name, dep_version)
+        with open(base, "w") as f:
+            yaml.dump(base_data, f, default_flow_style=False)
+    else:
+        click.echo("请指定 --override、--dep-name/--dep-version 或 --show")
 
 
 if __name__ == "__main__":

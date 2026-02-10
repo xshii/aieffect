@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from framework.core.reporter import Reporter
+from framework.core.reporter import generate_report
 
 
 def _create_results(tmp_path: Path) -> Path:
@@ -23,8 +23,7 @@ def _create_results(tmp_path: Path) -> Path:
 class TestReporter:
     def test_gen_json(self, tmp_path: Path) -> None:
         result_dir = _create_results(tmp_path)
-        reporter = Reporter()
-        output = reporter.generate(result_dir=str(result_dir), fmt="json")
+        output = generate_report(result_dir=str(result_dir), fmt="json")
         assert output.endswith("report.json")
         report = json.loads(Path(output).read_text())
         assert report["summary"]["total"] == 3
@@ -33,8 +32,7 @@ class TestReporter:
 
     def test_gen_html(self, tmp_path: Path) -> None:
         result_dir = _create_results(tmp_path)
-        reporter = Reporter()
-        output = reporter.generate(result_dir=str(result_dir), fmt="html")
+        output = generate_report(result_dir=str(result_dir), fmt="html")
         assert output.endswith("report.html")
         html = Path(output).read_text()
         assert "case1" in html
@@ -42,14 +40,12 @@ class TestReporter:
 
     def test_gen_junit(self, tmp_path: Path) -> None:
         result_dir = _create_results(tmp_path)
-        reporter = Reporter()
-        output = reporter.generate(result_dir=str(result_dir), fmt="junit")
+        output = generate_report(result_dir=str(result_dir), fmt="junit")
         assert output.endswith("report.xml")
         xml = Path(output).read_text()
         assert 'tests="3"' in xml
         assert 'failures="1"' in xml
 
     def test_empty_results(self, tmp_path: Path) -> None:
-        reporter = Reporter()
-        output = reporter.generate(result_dir=str(tmp_path / "nonexistent"), fmt="json")
+        output = generate_report(result_dir=str(tmp_path / "nonexistent"), fmt="json")
         assert output == ""

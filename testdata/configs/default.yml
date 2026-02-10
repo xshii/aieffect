@@ -1,5 +1,5 @@
 # 默认测试套件定义
-# 每个用例指定运行什么、如何运行
+# 每个用例通过 args.cmd 指定要执行的 shell 命令
 
 suite_name: default
 description: "默认冒烟测试套件"
@@ -9,12 +9,11 @@ testcases:
     timeout: 60
     tags: [smoke, sanity]
     args:
-      description: "基本健全性测试"
+      cmd: "echo '健全性测试通过'"
 
-  # 在此添加更多用例：
+  # 添加更多用例示例：
   # - name: conv2d_basic
   #   timeout: 3600
   #   tags: [conv, basic]
   #   args:
   #     cmd: "make run_conv2d"
-  #     golden: "testdata/golden/conv2d_basic.bin"

@@ -8,10 +8,10 @@ setup: ## 安装依赖并配置环境
 	@echo "安装完成。"
 
 lint: ## 运行代码检查 (ruff)
-	ruff check framework/ scripts/ tests/
+	ruff check framework/ tests/
 
 typecheck: ## 运行类型检查 (mypy)
-	mypy framework/ scripts/
+	mypy framework/
 
 test: ## 运行框架单元测试
 	pytest tests/
@@ -20,13 +20,13 @@ test-cov: ## 运行测试并生成覆盖率报告
 	pytest tests/ --cov=framework --cov-report=html --cov-report=term
 
 regression: ## 运行回归测试套件
-	python scripts/run_regression.py
+	aieffect run default
 
 report: ## 生成测试报告
-	python scripts/gen_report.py
+	aieffect report results
 
 dashboard: ## 启动轻量级 Web 看板
-	python -m framework.web.app
+	aieffect dashboard
 
 clean: ## 清理生成的文件
 	rm -rf __pycache__ .pytest_cache htmlcov .coverage .mypy_cache .ruff_cache

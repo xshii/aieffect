@@ -13,6 +13,3 @@ result_dir: "results"
 logging:
   level: "INFO"
   json_output: false  # CI 环境下设为 true
-
-# 要加载的插件（模块路径）
-plugins: []

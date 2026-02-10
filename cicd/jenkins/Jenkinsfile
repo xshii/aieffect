@@ -54,7 +54,7 @@ pipeline {
   model_lib: v2.1.0
   firmware: v1.3.2
   testbench_ip: v0.9.0
-Leave empty to use versions from deps/tool_versions.yml'''
+Leave empty to use versions from deps/manifest.yml'''
         )
 
         // --- Dependency change info (auto-populated by upstream trigger) ---
@@ -132,20 +132,20 @@ Leave empty to use versions from deps/tool_versions.yml'''
                     if (params.DEP_VERSIONS?.trim()) {
                         echo "Applying manual dependency versions..."
                         writeFile file: 'deps/override_versions.yml', text: params.DEP_VERSIONS
-                        sh 'python scripts/apply_deps.py --override deps/override_versions.yml'
+                        sh 'aieffect apply-deps --override deps/override_versions.yml'
                     }
                     // Dep change mode: update the specific changed dependency
                     else if (env.EFFECTIVE_MODE == 'dep_change' && params.CHANGED_DEP_NAME?.trim()) {
                         echo "Updating dependency: ${params.CHANGED_DEP_NAME} -> ${params.CHANGED_DEP_VERSION}"
                         sh """
-                            python scripts/apply_deps.py \
+                            aieffect apply-deps \
                                 --dep-name "${params.CHANGED_DEP_NAME}" \
                                 --dep-version "${params.CHANGED_DEP_VERSION}"
                         """
                     }
-                    // Otherwise: use default versions from deps/tool_versions.yml
+                    // Otherwise: use default versions from deps/manifest.yml
                     else {
-                        echo "Using default dependency versions from deps/tool_versions.yml"
+                        echo "Using default dependency versions from deps/manifest.yml"
                     }
                 }
             }

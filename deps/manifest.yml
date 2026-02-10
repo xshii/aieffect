@@ -1,14 +1,41 @@
-# 依赖包注册表
+# 依赖统一清单
 #
-# 所有组件依赖的统一清单。
-# 每个依赖包含：名称、负责人（发布方）、版本、来源类型。
+# 包含 EDA 工具版本 + 组件依赖包。
+# 此文件是"我们用什么版本"的唯一可信来源。
 #
-# 来源类型：
+# 依赖包来源类型：
 #   - api:  通过 API 从制品服务器下载
 #   - lfs:  存储在本仓库 Git LFS 中（deps/packages/<name>/）
 #   - url:  直接 URL 下载
-#
-# 此文件是"我们用什么版本"的唯一可信来源。
+
+# =========================================================================
+# EDA 工具版本锁定
+# =========================================================================
+
+python: "3.10"
+
+eda_tools:
+  vcs:
+    version: "U-2023.03-SP2"
+    install_path: "/opt/synopsys/vcs"
+  xcelium:
+    version: "23.09"
+    install_path: "/opt/cadence/xcelium"
+  verilator:
+    version: "5.024"
+    install_path: "/opt/verilator"
+  verdi:
+    version: "U-2023.03-SP2"
+    install_path: "/opt/synopsys/verdi"
+
+# License 服务器（通过 LM_LICENSE_FILE 设置）
+license:
+  synopsys: "27000@lic-server"
+  cadence: "5280@lic-server"
+
+# =========================================================================
+# 组件依赖包
+# =========================================================================
 
 packages:
 
