@@ -17,7 +17,7 @@ class TestCollector:
         ]
         paths = save_results(results, output_dir=str(tmp_path / "out"))
         assert len(paths) == 2
-        data = json.loads(Path(paths[0]).read_text())
+        data = json.loads(Path(paths[0]).read_text(encoding="utf-8"))
         assert data["name"] == "case1"
         assert data["status"] == "passed"
         assert data["duration"] == 2.5

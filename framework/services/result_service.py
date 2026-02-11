@@ -1,0 +1,373 @@
+"""结果服务 — 统一结果存储 / 查询 / 对比 / 导出 / 上传
+
+将 collector + history + reporter 整合为统一的结果管理 API，
+提供结果生命周期管理。
+
+支持:
+  - 测试元信息存储（代码仓、环境等上下文）
+  - 测试结果数据的获取路径配置
+  - 结果上传: 云端 API / rsync 服务器 / 本地保存
+  - 存储服务器配置
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import shlex
+import subprocess
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from framework.core.history import HistoryManager
+from framework.core.models import SuiteResult, summarize_statuses
+
+logger = logging.getLogger(__name__)
+
+
+# =========================================================================
+# 存储目标配置
+# =========================================================================
+
+UPLOAD_LOCAL = "local"
+UPLOAD_API = "api"
+UPLOAD_RSYNC = "rsync"
+
+
+class StorageConfig:
+    """结果存储服务器配置"""
+
+    def __init__(
+        self, *,
+        upload_type: str = UPLOAD_LOCAL,
+        api_url: str = "",
+        api_token: str = "",
+        rsync_target: str = "",
+        rsync_options: str = "-avz",
+        ssh_key: str = "",
+        ssh_user: str = "",
+    ) -> None:
+        self.upload_type = upload_type
+        self.api_url = api_url
+        self.api_token = api_token
+        self.rsync_target = rsync_target
+        self.rsync_options = rsync_options
+        self.ssh_key = ssh_key
+        self.ssh_user = ssh_user
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "upload_type": self.upload_type,
+            "api_url": self.api_url,
+            "api_token": self.api_token,
+            "rsync_target": self.rsync_target,
+            "rsync_options": self.rsync_options,
+            "ssh_key": self.ssh_key,
+            "ssh_user": self.ssh_user,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> StorageConfig:
+        return cls(
+            upload_type=data.get("upload_type", UPLOAD_LOCAL),
+            api_url=data.get("api_url", ""),
+            api_token=data.get("api_token", ""),
+            rsync_target=data.get("rsync_target", ""),
+            rsync_options=data.get("rsync_options", "-avz"),
+            ssh_key=data.get("ssh_key", ""),
+            ssh_user=data.get("ssh_user", ""),
+        )
+
+
+class ResultService:
+    """统一结果管理"""
+
+    def __init__(
+        self, result_dir: str = "", history_file: str = "",
+        storage_config: StorageConfig | None = None,
+    ) -> None:
+        if not result_dir:
+            from framework.core.config import get_config
+            result_dir = get_config().result_dir
+        self.result_dir = Path(result_dir)
+        self.result_dir.mkdir(parents=True, exist_ok=True)
+        self.history = HistoryManager(history_file=history_file)
+        self.storage_config = storage_config or StorageConfig()
+
+    # ---- 保存 ----
+
+    def save(self, suite_result: SuiteResult, **context: Any) -> str:
+        """保存一次执行结果（持久化 + 历史记录），返回 run_id
+
+        结果包含测试元信息和结果数据路径配置。
+        """
+        for r in suite_result.results:
+            result_data = asdict(r)
+            f = self.result_dir / f"{r.name}.json"
+            f.write_text(
+                json.dumps(result_data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        # 组装元信息
+        meta: dict[str, Any] = {}
+        for key in ("repo_name", "repo_ref", "repo_commit",
+                     "build_env", "exe_env", "stimulus_name"):
+            val = context.get(key, "")
+            if val:
+                meta[key] = val
+        if context.get("extra_meta"):
+            meta.update(context["extra_meta"])
+
+        # 组装结果路径配置
+        result_paths: dict[str, str] = {}
+        for key in ("log_path", "waveform_path", "coverage_path",
+                     "report_path", "artifact_dir"):
+            val = context.get(key, "")
+            if val:
+                result_paths[key] = val
+        if context.get("custom_paths"):
+            result_paths.update(context["custom_paths"])
+
+        entry = self.history.record_run(
+            suite=context.get("suite", suite_result.suite_name),
+            results=[asdict(r) for r in suite_result.results],
+            environment=context.get("environment", suite_result.environment),
+            snapshot_id=context.get(
+                "snapshot_id", suite_result.snapshot_id,
+            ),
+            params=context.get("params"),
+            meta=meta if meta else None,
+            result_paths=result_paths if result_paths else None,
+        )
+        logger.info(
+            "结果已保存: run_id=%s, %d 条",
+            entry["run_id"], len(suite_result.results),
+        )
+        return str(entry["run_id"])
+
+    # ---- 查询 ----
+
+    def get_result(self, case_name: str) -> dict[str, Any] | None:
+        """获取单个用例的最新结果"""
+        f = self.result_dir / f"{case_name}.json"
+        if not f.exists():
+            return None
+        result: dict[str, Any] = json.loads(f.read_text(encoding="utf-8"))
+        return result
+
+    def list_results(self) -> dict[str, Any]:
+        """列出所有结果及汇总"""
+        results: list[dict[str, Any]] = []
+        if self.result_dir.exists():
+            for f in sorted(self.result_dir.glob("*.json")):
+                if f.name.startswith("report"):
+                    continue
+                try:
+                    results.append(
+                        json.loads(f.read_text(encoding="utf-8")),
+                    )
+                except json.JSONDecodeError:
+                    pass
+        return {
+            "summary": summarize_statuses(results),
+            "results": results,
+        }
+
+    def query_history(
+        self, *, suite: str | None = None, environment: str | None = None,
+        case_name: str | None = None, limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """查询执行历史"""
+        return self.history.query(
+            suite=suite, environment=environment,
+            case_name=case_name, limit=limit,
+        )
+
+    def case_summary(self, case_name: str) -> dict[str, Any]:
+        """获取单个用例的历史执行汇总"""
+        return self.history.case_summary(case_name)
+
+    # ---- 对比 ----
+
+    def compare_runs(self, run_id_a: str, run_id_b: str) -> dict[str, Any]:
+        """对比两次执行结果"""
+        all_records = self.history.query(limit=10000)
+        rec_a = next(
+            (r for r in all_records if r.get("run_id") == run_id_a), None,
+        )
+        rec_b = next(
+            (r for r in all_records if r.get("run_id") == run_id_b), None,
+        )
+
+        if rec_a is None or rec_b is None:
+            missing = []
+            if rec_a is None:
+                missing.append(run_id_a)
+            if rec_b is None:
+                missing.append(run_id_b)
+            return {"error": f"未找到记录: {', '.join(missing)}"}
+
+        cases_a = {r["name"]: r for r in rec_a.get("results", [])}
+        cases_b = {r["name"]: r for r in rec_b.get("results", [])}
+        all_names = sorted(set(cases_a) | set(cases_b))
+
+        diffs: list[dict[str, str]] = []
+        for name in all_names:
+            a_status = cases_a.get(name, {}).get("status", "—")
+            b_status = cases_b.get(name, {}).get("status", "—")
+            if a_status != b_status:
+                diffs.append(
+                    {"case": name, run_id_a: a_status, run_id_b: b_status},
+                )
+
+        return {
+            "run_a": {
+                "run_id": run_id_a,
+                "summary": rec_a.get("summary", {}),
+            },
+            "run_b": {
+                "run_id": run_id_b,
+                "summary": rec_b.get("summary", {}),
+            },
+            "diffs": diffs,
+            "total_cases": len(all_names),
+            "changed_cases": len(diffs),
+        }
+
+    # ---- 导出 ----
+
+    def export(self, fmt: str = "html") -> str:
+        """生成报告，返回报告文件路径"""
+        from framework.core.reporter import generate_report
+        return generate_report(result_dir=str(self.result_dir), fmt=fmt)
+
+    # ---- 上传 ----
+
+    def upload(
+        self, *,
+        config: StorageConfig | None = None,
+        run_id: str = "",
+    ) -> dict[str, Any]:
+        """上传结果到远端存储
+
+        支持三种上传方式:
+          - local: 结果已在本地，无需上传
+          - api: 通过 HTTP API 上传到云端
+          - rsync: 通过 rsync 上传到服务器
+
+        Args:
+            config: 存储配置（不传则使用实例默认配置）
+            run_id: 关联的 run_id（可选）
+        """
+        cfg = config or self.storage_config
+
+        if cfg.upload_type == UPLOAD_LOCAL:
+            return {
+                "status": "success",
+                "type": "local",
+                "path": str(self.result_dir),
+                "message": "结果已保存在本地",
+            }
+        if cfg.upload_type == UPLOAD_API:
+            return self._upload_via_api(cfg, run_id)
+        if cfg.upload_type == UPLOAD_RSYNC:
+            return self._upload_via_rsync(cfg)
+
+        return {"status": "error", "message": f"不支持的上传类型: {cfg.upload_type}"}
+
+    def _upload_via_api(
+        self, cfg: StorageConfig, run_id: str,
+    ) -> dict[str, Any]:
+        """通过 API 上传结果到云端"""
+        if not cfg.api_url:
+            return {"status": "error", "message": "API 上传需要配置 api_url"}
+
+        from framework.utils.net import validate_url_scheme
+        validate_url_scheme(cfg.api_url, context="result upload")
+
+        import urllib.request
+        data = self.list_results()
+        data["run_id"] = run_id
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+        req = urllib.request.Request(
+            cfg.api_url, data=body, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        if cfg.api_token:
+            req.add_header("Authorization", f"Bearer {cfg.api_token}")
+
+        try:
+            with urllib.request.urlopen(req) as resp:  # nosec B310
+                resp_data = json.loads(resp.read().decode("utf-8"))
+            return {
+                "status": "success", "type": "api",
+                "response": resp_data,
+            }
+        except Exception as e:
+            return {"status": "error", "type": "api", "message": str(e)}
+
+    def _upload_via_rsync(self, cfg: StorageConfig) -> dict[str, Any]:
+        """通过 rsync 上传结果到服务器"""
+        if not cfg.rsync_target:
+            return {"status": "error", "message": "rsync 上传需要配置 rsync_target"}
+
+        cmd_parts = self._build_rsync_cmd(cfg)
+        logger.info("rsync 上传: %s", " ".join(cmd_parts))
+
+        try:
+            r = subprocess.run(
+                cmd_parts, capture_output=True, text=True,
+                check=False, timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            return {"status": "error", "type": "rsync", "message": "rsync 超时 (600s)"}
+        except FileNotFoundError:
+            return {"status": "error", "type": "rsync",
+                    "message": "rsync 未安装，请先安装: apt install rsync / yum install rsync"}
+
+        return self._parse_rsync_result(r, cfg.rsync_target)
+
+    def _build_rsync_cmd(self, cfg: StorageConfig) -> list[str]:
+        """构造 rsync 命令"""
+        cmd_parts = ["rsync"] + shlex.split(cfg.rsync_options)
+        if cfg.ssh_key:
+            cmd_parts.extend(["-e", f"ssh -i {cfg.ssh_key}"])
+        elif cfg.ssh_user:
+            cmd_parts.extend(["-e", f"ssh -l {cfg.ssh_user}"])
+        cmd_parts.append(str(self.result_dir) + "/")
+        cmd_parts.append(cfg.rsync_target)
+        return cmd_parts
+
+    @staticmethod
+    def _parse_rsync_result(r: subprocess.CompletedProcess[str], target: str) -> dict[str, Any]:
+        """解析 rsync 结果"""
+        if r.returncode == 0:
+            return {"status": "success", "type": "rsync", "target": target}
+        if r.returncode in (12, 23) or "Permission denied" in r.stderr:
+            return {
+                "status": "error", "type": "rsync",
+                "message": f"权限不足 (rc={r.returncode}): {r.stderr[:300]}",
+                "hint": (
+                    "请检查权限配置:\n"
+                    "  1. 确认 SSH 密钥已添加: ssh_key 参数或 ssh-add\n"
+                    "  2. 确认目标目录写权限: ssh user@host 'ls -la /target'\n"
+                    "  3. 确认 rsync 已安装: which rsync\n"
+                    "  4. 配置免密登录: ssh-copy-id user@host"
+                ),
+            }
+        return {"status": "error", "type": "rsync",
+                "message": f"rsync 失败 (rc={r.returncode}): {r.stderr[:500]}"}
+
+    # ---- 清理 ----
+
+    def clean_results(self) -> int:
+        """清理结果目录下的所有 JSON 文件"""
+        count = 0
+        for f in self.result_dir.glob("*.json"):
+            f.unlink()
+            count += 1
+        logger.info("已清理 %d 个结果文件", count)
+        return count

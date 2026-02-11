@@ -13,3 +13,18 @@ result_dir: "results"
 logging:
   level: "INFO"
   json_output: false  # CI 环境下设为 true
+
+# 资源管理
+resource:
+  mode: "self"       # self（自管理）或 api（外部 API）
+  max_workers: 8
+  api_url: ""        # API 模式时的查询地址
+
+# 存储后端
+storage:
+  backend: "local"   # local 或 remote
+  local_dir: "data/storage"
+  remote:
+    api_url: ""
+    cache_dir: "data/cache"
+    cache_days: 7

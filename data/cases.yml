@@ -1,0 +1,5 @@
+# 用例表单存储
+# 由 CaseManager 自动维护，也可手动编辑
+
+cases: {}
+environments: {}
