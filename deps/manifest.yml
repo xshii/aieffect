@@ -3,13 +3,21 @@
 # 包含 EDA 工具版本 + 组件依赖包。
 # 此文件是"我们用什么版本"的唯一可信来源。
 #
-# 依赖包来源类型：
-#   - api:  通过 API 从制品服务器下载
-#   - lfs:  存储在本仓库 Git LFS 中（deps/packages/<name>/）
-#   - url:  直接 URL 下载
+# 策略: 本地优先
+#   依赖包体积通常很大，优先使用本地已安装版本。
+#   base_path 指定本地安装根目录，通过 base_path/{version}/ 切换版本。
+#   仅当本地不存在时，才按 source 类型远程拉取。
+#
+# 来源类型：
+#   - local: 仅本地安装（EDA 工具等），通过 base_path/{version}/ 切换
+#   - api:   从制品服务器 API 下载（各组件团队发布）
+#   - lfs:   存储在本仓库 Git LFS 中（deps/packages/<name>/）
+#   - url:   直接 URL 下载
+#
+# 所有类型都支持 base_path，有 base_path 时会先检查本地。
 
 # =========================================================================
-# EDA 工具版本锁定
+# EDA 工具版本锁定（自动作为 local 类型加载）
 # =========================================================================
 
 python: "3.10"
@@ -18,15 +26,31 @@ eda_tools:
   vcs:
     version: "U-2023.03-SP2"
     install_path: "/opt/synopsys/vcs"
+    description: "Synopsys VCS 仿真器"
+    env_vars:
+      VCS_HOME: "{path}"
+      PATH: "{path}/bin:$PATH"
   xcelium:
     version: "23.09"
     install_path: "/opt/cadence/xcelium"
+    description: "Cadence Xcelium 仿真器"
+    env_vars:
+      XCELIUM_HOME: "{path}"
+      PATH: "{path}/bin:$PATH"
   verilator:
     version: "5.024"
     install_path: "/opt/verilator"
+    description: "Verilator 开源仿真器"
+    env_vars:
+      VERILATOR_ROOT: "{path}"
+      PATH: "{path}/bin:$PATH"
   verdi:
     version: "U-2023.03-SP2"
     install_path: "/opt/synopsys/verdi"
+    description: "Synopsys Verdi 调试工具"
+    env_vars:
+      VERDI_HOME: "{path}"
+      PATH: "{path}/bin:$PATH"
 
 # License 服务器（通过 LM_LICENSE_FILE 设置）
 license:
@@ -39,20 +63,24 @@ license:
 
 packages:
 
-  # 示例：AI 模型推理库（模型团队发布）
+  # 示例：AI 模型推理库（本地多版本 + API 回退下载）
   # model_lib:
   #   owner: model-team
   #   version: v2.1.0
   #   source: api
+  #   base_path: "/data/deps/model_lib"       # 本地安装根目录
   #   api_url: "https://artifact.internal.com/api/v1/packages/model_lib"
   #   checksum_sha256: "abc123..."
   #   description: "NPU 模型推理库"
+  #   env_vars:
+  #     MODEL_LIB_PATH: "{path}"
 
-  # 示例：固件二进制（固件团队发布）
+  # 示例：固件二进制（本地多版本 + API 回退下载）
   # firmware:
   #   owner: firmware-team
   #   version: v1.3.2
   #   source: api
+  #   base_path: "/data/deps/firmware"
   #   api_url: "https://artifact.internal.com/api/v1/packages/firmware"
   #   checksum_sha256: "def456..."
   #   description: "NPU 固件"
@@ -70,6 +98,7 @@ packages:
   #   owner: model-team
   #   version: v1.0.0
   #   source: url
-  #   url: "https://storage.internal.com/golden/ref_model_v1.0.0.tar.gz"
+  #   base_path: "/data/deps/golden"
+  #   url: "https://storage.internal.com/golden/ref_model_{version}.tar.gz"
   #   checksum_sha256: "789abc..."
   #   description: "参考模型的 golden 输出"

@@ -1,0 +1,31 @@
+# 日志匹配检查规则
+#
+# 规则类型:
+#   required  - 日志中必须包含该模式（缺失则判定失败）
+#   forbidden - 日志中不得包含该模式（出现则判定失败）
+
+rules:
+  - name: simulation_complete
+    pattern: "Simulation (complete|finished|done)"
+    type: required
+    description: "仿真必须正常完成"
+
+  - name: test_passed
+    pattern: "TEST (PASSED|PASS|passed)"
+    type: required
+    description: "测试必须显示通过标志"
+
+  - name: no_fatal_error
+    pattern: "FATAL|Fatal Error|Segmentation fault"
+    type: forbidden
+    description: "不得出现致命错误"
+
+  - name: no_uvm_fatal
+    pattern: "UVM_FATAL\\s*:"
+    type: forbidden
+    description: "不得出现 UVM FATAL"
+
+  - name: no_timeout
+    pattern: "TIMEOUT|Timeout exceeded"
+    type: forbidden
+    description: "不得出现超时"
