@@ -109,62 +109,79 @@ class BuildService:
         repo_ref: str = "",
         force: bool = False,
     ) -> BuildResult:
-        """执行构建流程
-
-        缓存策略:
-          - 以 (name, repo_ref) 为缓存键
-          - 同名同分支已成功构建过则直接返回缓存结果
-          - 指定新分支时 repo_ref 不同，缓存未命中，触发重建
-          - force=True 时强制重新构建
-        """
+        """执行构建流程（缓存策略见模块文档）"""
         spec = self.get(name)
         if spec is None:
             raise CaseNotFoundError(f"构建配置不存在: {name}")
 
-        # 解析代码仓分支
-        effective_ref = repo_ref
-        if not effective_ref and spec.repo_name:
-            from framework.services.repo_service import RepoService
-            svc = RepoService()
-            repo_spec = svc.get(spec.repo_name)
-            if repo_spec:
-                effective_ref = repo_spec.ref
+        effective_ref = self._resolve_ref(spec, repo_ref)
 
         # 检查构建缓存
-        cache_key = (name, effective_ref)
-        if not force and cache_key in self._build_cache:
-            cached = self._build_cache[cache_key]
-            if cached.status == "success":
-                logger.info(
-                    "构建缓存命中: %s (ref=%s), 跳过重复构建",
-                    name, effective_ref,
-                )
-                return BuildResult(
-                    spec=spec,
-                    output_path=cached.output_path,
-                    status="cached",
-                    duration=cached.duration,
-                    message=f"缓存命中 (ref={effective_ref})",
-                    repo_ref=effective_ref,
-                    cached=True,
-                )
+        cached = self._check_cache(spec, effective_ref, force)
+        if cached is not None:
+            return cached
 
         # 解析工作目录
-        if not work_dir:
-            if spec.repo_name:
-                from framework.services.repo_service import RepoService
-                svc = RepoService()
-                ws = svc.checkout(spec.repo_name, ref_override=repo_ref)
-                if ws.status == "error":
-                    return BuildResult(
-                        spec=spec, status="failed",
-                        message="代码仓检出失败", repo_ref=effective_ref,
-                    )
-                work_dir = ws.local_path
-            else:
-                work_dir = str(self.output_root / name)
-                Path(work_dir).mkdir(parents=True, exist_ok=True)
+        work_dir = self._resolve_work_dir(spec, work_dir, repo_ref, effective_ref)
+        if work_dir.startswith("ERROR:"):
+            return BuildResult(
+                spec=spec, status="failed",
+                message=work_dir.removeprefix("ERROR:"), repo_ref=effective_ref,
+            )
 
+        return self._execute_build(spec, work_dir, env_vars, effective_ref)
+
+    def _resolve_ref(self, spec: BuildSpec, repo_ref: str) -> str:
+        """解析有效代码仓分支"""
+        if repo_ref:
+            return repo_ref
+        if spec.repo_name:
+            from framework.services.repo_service import RepoService
+            repo_spec = RepoService().get(spec.repo_name)
+            if repo_spec:
+                return repo_spec.ref
+        return ""
+
+    def _check_cache(
+        self, spec: BuildSpec, effective_ref: str, force: bool,
+    ) -> BuildResult | None:
+        """检查缓存，命中则返回 BuildResult，否则 None"""
+        cache_key = (spec.name, effective_ref)
+        if force or cache_key not in self._build_cache:
+            return None
+        cached = self._build_cache[cache_key]
+        if cached.status != "success":
+            return None
+        logger.info("构建缓存命中: %s (ref=%s), 跳过重复构建", spec.name, effective_ref)
+        return BuildResult(
+            spec=spec, output_path=cached.output_path,
+            status="cached", duration=cached.duration,
+            message=f"缓存命中 (ref={effective_ref})",
+            repo_ref=effective_ref, cached=True,
+        )
+
+    def _resolve_work_dir(
+        self, spec: BuildSpec, work_dir: str,
+        repo_ref: str, effective_ref: str,
+    ) -> str:
+        """解析工作目录，失败返回 'ERROR:...'"""
+        if work_dir:
+            return work_dir
+        if spec.repo_name:
+            from framework.services.repo_service import RepoService
+            ws = RepoService().checkout(spec.repo_name, ref_override=repo_ref)
+            if ws.status == "error":
+                return "ERROR:代码仓检出失败"
+            return ws.local_path
+        path = str(self.output_root / spec.name)
+        Path(path).mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _execute_build(
+        self, spec: BuildSpec, work_dir: str,
+        env_vars: dict[str, str] | None, effective_ref: str,
+    ) -> BuildResult:
+        """执行实际构建命令"""
         import os
         env = {**os.environ, **(env_vars or {})}
         start = time.monotonic()
@@ -176,7 +193,7 @@ class BuildService:
                 self._run_cmd(spec.build_cmd, work_dir, env, "build")
         except RuntimeError as e:
             duration = time.monotonic() - start
-            logger.error("构建失败 %s: %s", name, e)
+            logger.error("构建失败 %s: %s", spec.name, e)
             return BuildResult(
                 spec=spec, status="failed", duration=duration,
                 message=str(e), repo_ref=effective_ref,
@@ -186,17 +203,12 @@ class BuildService:
         output_path = (
             str(Path(work_dir) / spec.output_dir) if spec.output_dir else work_dir
         )
-
         result = BuildResult(
             spec=spec, output_path=output_path,
             status="success", duration=duration, repo_ref=effective_ref,
         )
-        # 写入缓存
-        self._build_cache[cache_key] = result
-        logger.info(
-            "构建完成: %s (ref=%s, %.1fs) -> %s",
-            name, effective_ref, duration, output_path,
-        )
+        self._build_cache[(spec.name, effective_ref)] = result
+        logger.info("构建完成: %s (ref=%s, %.1fs)", spec.name, effective_ref, duration)
         return result
 
     def is_cached(self, name: str, repo_ref: str = "") -> bool:

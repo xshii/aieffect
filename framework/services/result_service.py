@@ -312,20 +312,9 @@ class ResultService:
     def _upload_via_rsync(self, cfg: StorageConfig) -> dict[str, Any]:
         """通过 rsync 上传结果到服务器"""
         if not cfg.rsync_target:
-            return {
-                "status": "error",
-                "message": "rsync 上传需要配置 rsync_target",
-            }
+            return {"status": "error", "message": "rsync 上传需要配置 rsync_target"}
 
-        cmd_parts = ["rsync"] + shlex.split(cfg.rsync_options)
-        if cfg.ssh_key:
-            cmd_parts.extend(["-e", f"ssh -i {cfg.ssh_key}"])
-        elif cfg.ssh_user:
-            cmd_parts.extend(["-e", f"ssh -l {cfg.ssh_user}"])
-
-        cmd_parts.append(str(self.result_dir) + "/")
-        cmd_parts.append(cfg.rsync_target)
-
+        cmd_parts = self._build_rsync_cmd(cfg)
         logger.info("rsync 上传: %s", " ".join(cmd_parts))
 
         try:
@@ -333,38 +322,44 @@ class ResultService:
                 cmd_parts, capture_output=True, text=True,
                 check=False, timeout=600,
             )
-            if r.returncode == 0:
-                return {
-                    "status": "success", "type": "rsync",
-                    "target": cfg.rsync_target,
-                }
-            # 权限相关错误提示
-            if r.returncode in (12, 23) or "Permission denied" in r.stderr:
-                return {
-                    "status": "error", "type": "rsync",
-                    "message": f"权限不足 (rc={r.returncode}): {r.stderr[:300]}",
-                    "hint": (
-                        "请检查权限配置:\n"
-                        "  1. 确认 SSH 密钥已添加: ssh_key 参数或 ssh-add\n"
-                        "  2. 确认目标目录写权限: ssh user@host 'ls -la /target'\n"
-                        "  3. 确认 rsync 已安装: which rsync\n"
-                        "  4. 配置免密登录: ssh-copy-id user@host"
-                    ),
-                }
-            return {
-                "status": "error", "type": "rsync",
-                "message": f"rsync 失败 (rc={r.returncode}): {r.stderr[:500]}",
-            }
         except subprocess.TimeoutExpired:
-            return {
-                "status": "error", "type": "rsync",
-                "message": "rsync 超时 (600s)",
-            }
+            return {"status": "error", "type": "rsync", "message": "rsync 超时 (600s)"}
         except FileNotFoundError:
+            return {"status": "error", "type": "rsync",
+                    "message": "rsync 未安装，请先安装: apt install rsync / yum install rsync"}
+
+        return self._parse_rsync_result(r, cfg.rsync_target)
+
+    def _build_rsync_cmd(self, cfg: StorageConfig) -> list[str]:
+        """构造 rsync 命令"""
+        cmd_parts = ["rsync"] + shlex.split(cfg.rsync_options)
+        if cfg.ssh_key:
+            cmd_parts.extend(["-e", f"ssh -i {cfg.ssh_key}"])
+        elif cfg.ssh_user:
+            cmd_parts.extend(["-e", f"ssh -l {cfg.ssh_user}"])
+        cmd_parts.append(str(self.result_dir) + "/")
+        cmd_parts.append(cfg.rsync_target)
+        return cmd_parts
+
+    @staticmethod
+    def _parse_rsync_result(r: subprocess.CompletedProcess[str], target: str) -> dict[str, Any]:
+        """解析 rsync 结果"""
+        if r.returncode == 0:
+            return {"status": "success", "type": "rsync", "target": target}
+        if r.returncode in (12, 23) or "Permission denied" in r.stderr:
             return {
                 "status": "error", "type": "rsync",
-                "message": "rsync 未安装，请先安装: apt install rsync / yum install rsync",
+                "message": f"权限不足 (rc={r.returncode}): {r.stderr[:300]}",
+                "hint": (
+                    "请检查权限配置:\n"
+                    "  1. 确认 SSH 密钥已添加: ssh_key 参数或 ssh-add\n"
+                    "  2. 确认目标目录写权限: ssh user@host 'ls -la /target'\n"
+                    "  3. 确认 rsync 已安装: which rsync\n"
+                    "  4. 配置免密登录: ssh-copy-id user@host"
+                ),
             }
+        return {"status": "error", "type": "rsync",
+                "message": f"rsync 失败 (rc={r.returncode}): {r.stderr[:500]}"}
 
     # ---- 清理 ----
 

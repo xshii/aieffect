@@ -413,18 +413,18 @@ class EnvService:
                 return session
 
         if exe_env_name:
-            spec = self.get_exe_env(exe_env_name)
-            if spec is None:
+            exe_spec = self.get_exe_env(exe_env_name)
+            if exe_spec is None:
                 raise CaseNotFoundError(f"执行环境不存在: {exe_env_name}")
-            session.exe_env = spec
-            if spec.exe_env_type == EXE_ENV_SAME_AS_BUILD and not session.build_env:
-                if spec.build_env_name:
-                    bspec = self.get_build_env(spec.build_env_name)
+            session.exe_env = exe_spec
+            if exe_spec.exe_env_type == EXE_ENV_SAME_AS_BUILD and not session.build_env:
+                if exe_spec.build_env_name:
+                    bspec = self.get_build_env(exe_spec.build_env_name)
                     if bspec:
                         session.build_env = bspec
                         bh = _get_build_handler(bspec.build_env_type)
                         session = bh.apply(session)
-            handler = _get_exe_handler(spec.exe_env_type)
+            handler = _get_exe_handler(exe_spec.exe_env_type)
             session = handler.apply(session)
 
         self._sessions[session_id] = session

@@ -74,20 +74,22 @@ class CaseManager:
         tags: list[str] | None = None,
         timeout: int = 3600,
         environments: list[str] | None = None,
-        params_schema: dict | None = None,
-        repo: dict[str, str] | None = None,
+        **extra: Any,
     ) -> dict:
-        """添加或更新用例定义"""
+        """添加或更新用例定义
+
+        extra 支持: params_schema(dict), repo(dict)
+        """
         case: dict[str, object] = {
             "cmd": cmd,
             "description": description,
             "tags": tags or [],
             "timeout": timeout,
             "environments": environments or [],
-            "params_schema": params_schema or {},
+            "params_schema": extra.get("params_schema") or {},
         }
-        if repo:
-            case["repo"] = repo
+        if extra.get("repo"):
+            case["repo"] = extra["repo"]
         self._cases()[name] = case
         self._save()
         logger.info("用例已保存: %s", name)

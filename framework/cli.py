@@ -1,5 +1,7 @@
 """aieffect 命令行接口"""
 
+from typing import Any
+
 import click
 
 from framework import __version__
@@ -226,30 +228,25 @@ def cases_list(tag: str | None, env: str | None) -> None:
 @click.option("--repo-path", default="", help="仓内子目录")
 @click.option("--repo-setup", default="", help="依赖安装命令")
 @click.option("--repo-build", default="", help="编译命令")
-def cases_add(
-    name: str, cmd: str, desc: str, tag: tuple[str, ...], timeout: int,
-    env: tuple[str, ...], repo_url: str, repo_ref: str, repo_path: str,
-    repo_setup: str, repo_build: str,
-) -> None:
+def cases_add(**kwargs: Any) -> None:
     """添加用例"""
     from framework.core.case_manager import CaseManager
 
     repo: dict[str, str] = {}
-    if repo_url:
-        repo = {"url": repo_url, "ref": repo_ref}
-        if repo_path:
-            repo["path"] = repo_path
-        if repo_setup:
-            repo["setup"] = repo_setup
-        if repo_build:
-            repo["build"] = repo_build
+    if kwargs.get("repo_url"):
+        repo = {"url": kwargs["repo_url"], "ref": kwargs.get("repo_ref", "main")}
+        for key, rkey in [("repo_path", "path"), ("repo_setup", "setup"), ("repo_build", "build")]:
+            if kwargs.get(key):
+                repo[rkey] = kwargs[key]
 
     cm = CaseManager()
     cm.add_case(
-        name, cmd, description=desc, tags=list(tag),
-        timeout=timeout, environments=list(env), repo=repo,
+        kwargs["name"], kwargs["cmd"], description=kwargs.get("desc", ""),
+        tags=list(kwargs.get("tag", ())),
+        timeout=kwargs.get("timeout", 3600),
+        environments=list(kwargs.get("env", ())), repo=repo,
     )
-    click.echo(f"用例已添加: {name}")
+    click.echo(f"用例已添加: {kwargs['name']}")
 
 
 @cases_group.command(name="remove")
@@ -476,22 +473,21 @@ def repo_list() -> None:
 @click.option("--setup-cmd", default="", help="依赖安装命令")
 @click.option("--build-cmd", default="", help="编译命令")
 @click.option("--dep", multiple=True, help="关联依赖包（可多次）")
-def repo_add(
-    name: str, source_type: str, url: str, ref: str, path: str,
-    tar_path: str, tar_url: str, api_url: str,
-    setup_cmd: str, build_cmd: str, dep: tuple[str, ...],
-) -> None:
+def repo_add(**kwargs: Any) -> None:
     """注册代码仓（支持 git/tar/api 三种来源）"""
     from framework.core.models import RepoSpec
     from framework.services.repo_service import RepoService
     svc = RepoService()
     spec = RepoSpec(
-        name=name, source_type=source_type, url=url, ref=ref, path=path,
-        tar_path=tar_path, tar_url=tar_url, api_url=api_url,
-        setup_cmd=setup_cmd, build_cmd=build_cmd, deps=list(dep),
+        name=kwargs["name"], source_type=kwargs.get("source_type", "git"),
+        url=kwargs.get("url", ""), ref=kwargs.get("ref", "main"),
+        path=kwargs.get("path", ""), tar_path=kwargs.get("tar_path", ""),
+        tar_url=kwargs.get("tar_url", ""), api_url=kwargs.get("api_url", ""),
+        setup_cmd=kwargs.get("setup_cmd", ""), build_cmd=kwargs.get("build_cmd", ""),
+        deps=list(kwargs.get("dep", ())),
     )
     svc.register(spec)
-    click.echo(f"代码仓已注册: {name} (type={source_type})")
+    click.echo(f"代码仓已注册: {kwargs['name']} (type={kwargs.get('source_type', 'git')})")
 
 
 @repo_group.command(name="remove")
@@ -575,23 +571,21 @@ def env_svc_list() -> None:
 @click.option("--user", default="", help="SSH 用户（remote 类型）")
 @click.option("--key-path", default="", help="SSH 密钥（remote 类型）")
 @click.option("--var", multiple=True, help="环境变量 key=value（可多次）")
-def env_add_build(
-    name: str, env_type: str, desc: str, work_dir: str,
-    host: str, port: int, user: str, key_path: str,
-    var: tuple[str, ...],
-) -> None:
+def env_add_build(**kwargs: Any) -> None:
     """注册构建环境"""
     from framework.core.models import BuildEnvSpec
     from framework.services.env_service import EnvService
-    variables = _parse_kv_pairs(var)
+    variables = _parse_kv_pairs(kwargs.get("var", ()))
     spec = BuildEnvSpec(
-        name=name, build_env_type=env_type, description=desc,
-        work_dir=work_dir, variables=variables,
-        host=host, port=port, user=user, key_path=key_path,
+        name=kwargs["name"], build_env_type=kwargs.get("env_type", "local"),
+        description=kwargs.get("desc", ""), work_dir=kwargs.get("work_dir", ""),
+        variables=variables, host=kwargs.get("host", ""),
+        port=kwargs.get("port", 22), user=kwargs.get("user", ""),
+        key_path=kwargs.get("key_path", ""),
     )
     svc = EnvService()
     svc.register_build_env(spec)
-    click.echo(f"构建环境已注册: {name} (type={env_type})")
+    click.echo(f"构建环境已注册: {kwargs['name']} (type={kwargs.get('env_type', 'local')})")
 
 
 @env_group.command(name="add-exe")
@@ -607,25 +601,22 @@ def env_add_build(
 @click.option("--timeout", default=3600, help="超时时间（秒）")
 @click.option("--var", multiple=True, help="环境变量 key=value（可多次）")
 @click.option("--license", "lics", multiple=True, help="许可证 key=value（可多次）")
-def env_add_exe(
-    name: str, env_type: str, desc: str, api_url: str, api_token: str,
-    build_env_name: str, timeout: int,
-    var: tuple[str, ...], lics: tuple[str, ...],
-) -> None:
+def env_add_exe(**kwargs: Any) -> None:
     """注册执行环境"""
     from framework.core.models import ExeEnvSpec
     from framework.services.env_service import EnvService
-    variables = _parse_kv_pairs(var)
-    licenses = _parse_kv_pairs(lics)
+    variables = _parse_kv_pairs(kwargs.get("var", ()))
+    licenses = _parse_kv_pairs(kwargs.get("lics", ()))
     spec = ExeEnvSpec(
-        name=name, exe_env_type=env_type, description=desc,
-        api_url=api_url, api_token=api_token,
-        variables=variables, licenses=licenses,
-        timeout=timeout, build_env_name=build_env_name,
+        name=kwargs["name"], exe_env_type=kwargs.get("env_type", "eda"),
+        description=kwargs.get("desc", ""), api_url=kwargs.get("api_url", ""),
+        api_token=kwargs.get("api_token", ""), variables=variables,
+        licenses=licenses, timeout=kwargs.get("timeout", 3600),
+        build_env_name=kwargs.get("build_env_name", ""),
     )
     svc = EnvService()
     svc.register_exe_env(spec)
-    click.echo(f"执行环境已注册: {name} (type={env_type})")
+    click.echo(f"执行环境已注册: {kwargs['name']} (type={kwargs.get('env_type', 'eda')})")
 
 
 @env_group.command(name="remove-build")
@@ -1039,37 +1030,34 @@ def result_upload(
 @click.option("--snapshot", default="", help="快照 ID")
 @click.option("--case", multiple=True, help="用例名称（可多次）")
 @click.option("--param", multiple=True, help="参数 key=value（可多次）")
-def orchestrate(
-    suite: str, parallel: int, config: str,
-    build_env: str, exe_env: str, env: str,
-    repo: tuple[str, ...], build_names: tuple[str, ...],
-    stimulus: tuple[str, ...], snapshot: str,
-    case: tuple[str, ...], param: tuple[str, ...],
-) -> None:
+def orchestrate(**kwargs: Any) -> None:
     """7 步编排执行（环境→代码仓→构建→激励→执行→收集→清理）"""
     from framework.services.execution_orchestrator import (
         ExecutionOrchestrator,
         OrchestrationPlan,
     )
 
-    params: dict[str, str] = {}
-    for p in param:
-        if "=" in p:
-            k, v = p.split("=", 1)
-            params[k.strip()] = v.strip()
-
+    params = _parse_kv_pairs(kwargs.get("param", ()))
     plan = OrchestrationPlan(
-        suite=suite, config_path=config, parallel=parallel,
-        build_env_name=build_env, exe_env_name=exe_env,
-        environment=env,
-        repo_names=list(repo),
-        build_names=list(build_names), stimulus_names=list(stimulus),
-        params=params, snapshot_id=snapshot, case_names=list(case),
+        suite=kwargs.get("suite", "default"),
+        config_path=kwargs.get("config", "configs/default.yml"),
+        parallel=kwargs.get("parallel", 1),
+        build_env_name=kwargs.get("build_env", ""),
+        exe_env_name=kwargs.get("exe_env", ""),
+        environment=kwargs.get("env", ""),
+        repo_names=list(kwargs.get("repo", ())),
+        build_names=list(kwargs.get("build_names", ())),
+        stimulus_names=list(kwargs.get("stimulus", ())),
+        params=params, snapshot_id=kwargs.get("snapshot", ""),
+        case_names=list(kwargs.get("case", ())),
     )
 
-    orch = ExecutionOrchestrator()
-    report = orch.run(plan)
+    report = ExecutionOrchestrator().run(plan)
+    _print_orchestrate_report(report)
 
+
+def _print_orchestrate_report(report: Any) -> None:
+    """打印编排执行报告"""
     click.echo("\n=== 编排执行报告 ===")
     for step in report.steps:
         status = step.get("status", "?")

@@ -142,41 +142,42 @@ class RepoService:
                 logger.info("复用已有工作目录: %s@%s -> %s", name, ref, cached.local_path)
                 return cached
 
-        # 按来源类型分派
-        if spec.source_type == "git":
-            ws = self._checkout_git(spec, ref)
-        elif spec.source_type == "tar":
-            ws = self._checkout_tar(spec, ref)
-        elif spec.source_type == "api":
-            ws = self._checkout_api(spec, ref)
-        else:
-            raise ValidationError(f"不支持的来源类型: {spec.source_type}")
-
-        # 解析代码仓自带的依赖
-        if ws.status not in ("error", "pending") and spec.deps:
-            self._resolve_deps(spec.deps)
-
-        # 执行 setup / build
-        if ws.status not in ("error", "pending"):
-            cwd = Path(ws.local_path)
-            if spec.path:
-                cwd = cwd / spec.path
-            if not cwd.exists():
-                ws.status = "error"
-            else:
-                try:
-                    if spec.setup_cmd:
-                        self._run_step("setup", spec.setup_cmd, cwd)
-                    if spec.build_cmd:
-                        self._run_step("build", spec.build_cmd, cwd)
-                    ws.local_path = str(cwd)
-                except RuntimeError as e:
-                    ws.status = "error"
-                    logger.error("构建步骤失败 %s: %s", name, e)
-
-        # 缓存
+        ws = self._dispatch_checkout(spec, ref)
+        self._post_checkout(ws, spec, name)
         self._workspace_cache[cache_key] = ws
         return ws
+
+    def _dispatch_checkout(self, spec: RepoSpec, ref: str) -> RepoWorkspace:
+        """按来源类型分派检出"""
+        if spec.source_type == "git":
+            return self._checkout_git(spec, ref)
+        if spec.source_type == "tar":
+            return self._checkout_tar(spec, ref)
+        if spec.source_type == "api":
+            return self._checkout_api(spec, ref)
+        raise ValidationError(f"不支持的来源类型: {spec.source_type}")
+
+    def _post_checkout(self, ws: RepoWorkspace, spec: RepoSpec, name: str) -> None:
+        """检出后执行依赖解析和 setup/build 步骤"""
+        if ws.status in ("error", "pending"):
+            return
+        if spec.deps:
+            self._resolve_deps(spec.deps)
+        cwd = Path(ws.local_path)
+        if spec.path:
+            cwd = cwd / spec.path
+        if not cwd.exists():
+            ws.status = "error"
+            return
+        try:
+            if spec.setup_cmd:
+                self._run_step("setup", spec.setup_cmd, cwd)
+            if spec.build_cmd:
+                self._run_step("build", spec.build_cmd, cwd)
+            ws.local_path = str(cwd)
+        except RuntimeError as e:
+            ws.status = "error"
+            logger.error("构建步骤失败 %s: %s", name, e)
 
     def checkout_for_case(self, binding: CaseRepoBinding) -> RepoWorkspace:
         """按用例级绑定检出代码仓（支持分支覆盖 + 复用控制）"""
