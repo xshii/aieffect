@@ -28,6 +28,31 @@ class Case:
 
 
 @dataclass
+class TestMeta:
+    """测试元信息 — 记录用例执行时的代码仓、环境等上下文"""
+
+    repo_name: str = ""
+    repo_ref: str = ""
+    repo_commit: str = ""
+    build_env: str = ""
+    exe_env: str = ""
+    stimulus_name: str = ""
+    extra: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ResultDataPath:
+    """测试结果数据的获取路径配置"""
+
+    log_path: str = ""           # 日志文件路径
+    waveform_path: str = ""      # 波形文件路径
+    coverage_path: str = ""      # 覆盖率数据路径
+    report_path: str = ""        # 报告路径
+    artifact_dir: str = ""       # 产物根目录
+    custom_paths: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class TaskResult:
     """单个测试用例的执行结果"""
 
@@ -38,6 +63,8 @@ class TaskResult:
     log_path: str = ""
     artifacts: dict[str, str] = field(default_factory=dict)
     metrics: dict[str, Any] = field(default_factory=dict)
+    meta: TestMeta | None = None
+    result_paths: ResultDataPath | None = None
 
 
 def summarize_statuses(results: list[dict]) -> dict[str, int]:
@@ -151,6 +178,25 @@ class RepoWorkspace:
 # 环境领域模型
 # =========================================================================
 
+# 构建环境类型
+BUILD_ENV_LOCAL = "local"
+BUILD_ENV_REMOTE = "remote"
+BUILD_ENV_TYPES = (BUILD_ENV_LOCAL, BUILD_ENV_REMOTE)
+
+# 执行环境类型
+EXE_ENV_EDA = "eda"
+EXE_ENV_FPGA = "fpga"
+EXE_ENV_SILICON = "silicon"
+EXE_ENV_SAME_AS_BUILD = "same_as_build"
+EXE_ENV_TYPES = (EXE_ENV_EDA, EXE_ENV_FPGA, EXE_ENV_SILICON, EXE_ENV_SAME_AS_BUILD)
+
+# 环境会话状态
+ENV_PENDING = "pending"
+ENV_APPLIED = "applied"
+ENV_TIMEOUT = "timeout"
+ENV_RELEASED = "released"
+ENV_INVALID = "invalid"
+
 
 @dataclass
 class ToolSpec:
@@ -163,24 +209,69 @@ class ToolSpec:
 
 
 @dataclass
-class EnvironmentSpec:
+class BuildEnvSpec:
+    """构建环境定义"""
+
+    name: str
+    build_env_type: str = BUILD_ENV_LOCAL  # local | remote
+    description: str = ""
+
+    # 通用
+    work_dir: str = ""             # 工作目录根路径
+    variables: dict[str, str] = field(default_factory=dict)
+
+    # remote 特有
+    host: str = ""                 # 远端主机
+    port: int = 22                 # SSH 端口
+    user: str = ""                 # SSH 用户
+    key_path: str = ""             # SSH 密钥路径
+
+
+@dataclass
+class ExeEnvSpec:
     """执行环境定义"""
 
     name: str
+    exe_env_type: str = EXE_ENV_EDA  # eda | fpga | silicon | same_as_build
     description: str = ""
-    tools: dict[str, ToolSpec] = field(default_factory=dict)
+
+    # 通用
+    api_url: str = ""              # Web API 地址（eda/fpga/silicon 用）
+    api_token: str = ""            # API 认证令牌
     variables: dict[str, str] = field(default_factory=dict)
+    tools: dict[str, ToolSpec] = field(default_factory=dict)
     licenses: dict[str, str] = field(default_factory=dict)
+    timeout: int = 3600            # 默认超时（秒）
+
+    # same_as_build 特有
+    build_env_name: str = ""       # 引用的构建环境名称
+
+
+@dataclass
+class EnvironmentSpec:
+    """完整环境配置 — 组合构建环境 + 执行环境"""
+
+    name: str
+    description: str = ""
+    build_env: BuildEnvSpec | None = None
+    exe_env: ExeEnvSpec | None = None
 
 
 @dataclass
 class EnvSession:
-    """已装配的环境会话（可执行命令的运行时环境）"""
+    """环境会话 — apply 后获得，release 后失效
 
-    environment: EnvironmentSpec
+    生命周期: pending → applied → (timeout | released | invalid)
+    """
+
+    name: str
+    build_env: BuildEnvSpec | None = None
+    exe_env: ExeEnvSpec | None = None
     resolved_vars: dict[str, str] = field(default_factory=dict)
     work_dir: str = ""
-    status: str = "pending"  # pending | ready | torn_down | error
+    status: str = ENV_PENDING
+    session_id: str = ""
+    message: str = ""
 
 
 # =========================================================================
@@ -199,6 +290,9 @@ class StimulusSpec:
     storage_key: str = ""      # 存储 key
     external_url: str = ""     # 外部地址
     description: str = ""
+    # 构造参数
+    params: dict[str, str] = field(default_factory=dict)
+    template: str = ""         # 构造模板路径或内容
 
 
 @dataclass
@@ -209,6 +303,73 @@ class StimulusArtifact:
     local_path: str = ""
     checksum: str = ""
     status: str = "pending"  # pending | ready | error
+
+
+# 结果激励类型
+RESULT_STIMULUS_API = "api"
+RESULT_STIMULUS_BINARY = "binary"
+
+
+@dataclass
+class ResultStimulusSpec:
+    """结果激励定义 — 从执行结果中提取的激励数据
+
+    source_type:
+      - api: 通过 API 获取执行后的结果激励
+      - binary: 直接读取执行后产出的二进制文件
+    """
+
+    name: str
+    source_type: str = RESULT_STIMULUS_API  # api | binary
+    api_url: str = ""          # API 地址（api 类型）
+    api_token: str = ""        # API 认证令牌
+    binary_path: str = ""      # 二进制文件路径（binary 类型）
+    parser_cmd: str = ""       # 解析命令（对二进制做后处理）
+    description: str = ""
+
+
+@dataclass
+class ResultStimulusArtifact:
+    """已获取的结果激励产物"""
+
+    spec: ResultStimulusSpec
+    local_path: str = ""
+    data: dict[str, Any] = field(default_factory=dict)
+    status: str = "pending"    # pending | ready | error
+    message: str = ""
+
+
+# 激励触发类型
+TRIGGER_API = "api"
+TRIGGER_BINARY = "binary"
+
+
+@dataclass
+class TriggerSpec:
+    """激励触发定义
+
+    trigger_type:
+      - api: 通过 API 触发激励注入
+      - binary: 通过执行二进制工具触发激励注入
+    """
+
+    name: str
+    trigger_type: str = TRIGGER_API  # api | binary
+    api_url: str = ""          # API 地址（api 类型）
+    api_token: str = ""        # API 认证令牌
+    binary_cmd: str = ""       # 二进制执行命令（binary 类型）
+    stimulus_name: str = ""    # 关联的激励名
+    description: str = ""
+
+
+@dataclass
+class TriggerResult:
+    """激励触发结果"""
+
+    spec: TriggerSpec
+    status: str = "pending"    # pending | success | failed
+    message: str = ""
+    response: dict[str, Any] = field(default_factory=dict)
 
 
 # =========================================================================
@@ -234,9 +395,11 @@ class BuildResult:
 
     spec: BuildSpec
     output_path: str = ""
-    status: str = "pending"  # pending | success | failed
+    status: str = "pending"  # pending | success | failed | cached
     duration: float = 0.0
     message: str = ""
+    repo_ref: str = ""        # 构建时使用的代码仓分支
+    cached: bool = False      # 是否命中缓存
 
 
 # =========================================================================

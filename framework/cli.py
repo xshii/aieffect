@@ -541,18 +541,18 @@ def repo_clean(name: str) -> None:
 
 
 # =========================================================================
-# 环境管理（独立服务）
+# 环境管理（BuildEnv + ExeEnv）
 # =========================================================================
 
 
 @main.group(name="env")
 def env_group() -> None:
-    """执行环境管理"""
+    """执行环境管理（构建环境 + 执行环境）"""
 
 
 @env_group.command(name="list")
 def env_svc_list() -> None:
-    """列出已注册的执行环境"""
+    """列出所有已注册的环境"""
     from framework.services.env_service import EnvService
     svc = EnvService()
     envs = svc.list_all()
@@ -560,79 +560,155 @@ def env_svc_list() -> None:
         click.echo("没有已注册的环境。")
         return
     for e in envs:
-        tools = ", ".join((e.get("tools") or {}).keys()) or "-"
-        click.echo(f"  {e['name']:20s} tools=[{tools}]  {e.get('description', '')}")
+        cat = e.get("category", "?")
+        etype = e.get("build_env_type", e.get("exe_env_type", "-"))
+        click.echo(f"  {e['name']:20s} [{cat:5s}] type={etype:15s} {e.get('description', '')}")
 
 
-@env_group.command(name="add")
+@env_group.command(name="add-build")
 @click.argument("name")
+@click.option("--type", "env_type", default="local", type=click.Choice(["local", "remote"]))
 @click.option("--desc", default="", help="描述")
+@click.option("--work-dir", default="", help="工作目录")
+@click.option("--host", default="", help="远端主机（remote 类型）")
+@click.option("--port", default=22, help="SSH 端口（remote 类型）")
+@click.option("--user", default="", help="SSH 用户（remote 类型）")
+@click.option("--key-path", default="", help="SSH 密钥（remote 类型）")
+@click.option("--var", multiple=True, help="环境变量 key=value（可多次）")
+def env_add_build(
+    name: str, env_type: str, desc: str, work_dir: str,
+    host: str, port: int, user: str, key_path: str,
+    var: tuple[str, ...],
+) -> None:
+    """注册构建环境"""
+    from framework.core.models import BuildEnvSpec
+    from framework.services.env_service import EnvService
+    variables = _parse_kv_pairs(var)
+    spec = BuildEnvSpec(
+        name=name, build_env_type=env_type, description=desc,
+        work_dir=work_dir, variables=variables,
+        host=host, port=port, user=user, key_path=key_path,
+    )
+    svc = EnvService()
+    svc.register_build_env(spec)
+    click.echo(f"构建环境已注册: {name} (type={env_type})")
+
+
+@env_group.command(name="add-exe")
+@click.argument("name")
+@click.option(
+    "--type", "env_type", default="eda",
+    type=click.Choice(["eda", "fpga", "silicon", "same_as_build"]),
+)
+@click.option("--desc", default="", help="描述")
+@click.option("--api-url", default="", help="API 地址")
+@click.option("--api-token", default="", help="API 令牌")
+@click.option("--build-env-name", default="", help="关联构建环境（same_as_build 类型）")
+@click.option("--timeout", default=3600, help="超时时间（秒）")
 @click.option("--var", multiple=True, help="环境变量 key=value（可多次）")
 @click.option("--license", "lics", multiple=True, help="许可证 key=value（可多次）")
-def env_svc_add(name: str, desc: str, var: tuple[str, ...], lics: tuple[str, ...]) -> None:
+def env_add_exe(
+    name: str, env_type: str, desc: str, api_url: str, api_token: str,
+    build_env_name: str, timeout: int,
+    var: tuple[str, ...], lics: tuple[str, ...],
+) -> None:
     """注册执行环境"""
-    from framework.core.models import EnvironmentSpec
+    from framework.core.models import ExeEnvSpec
     from framework.services.env_service import EnvService
-
-    variables: dict[str, str] = {}
-    for v in var:
-        if "=" in v:
-            k, val = v.split("=", 1)
-            variables[k.strip()] = val.strip()
-    licenses: dict[str, str] = {}
-    for lic in lics:
-        if "=" in lic:
-            k, val = lic.split("=", 1)
-            licenses[k.strip()] = val.strip()
-
-    spec = EnvironmentSpec(name=name, description=desc, variables=variables, licenses=licenses)
+    variables = _parse_kv_pairs(var)
+    licenses = _parse_kv_pairs(lics)
+    spec = ExeEnvSpec(
+        name=name, exe_env_type=env_type, description=desc,
+        api_url=api_url, api_token=api_token,
+        variables=variables, licenses=licenses,
+        timeout=timeout, build_env_name=build_env_name,
+    )
     svc = EnvService()
-    svc.register(spec)
-    click.echo(f"环境已注册: {name}")
+    svc.register_exe_env(spec)
+    click.echo(f"执行环境已注册: {name} (type={env_type})")
 
 
-@env_group.command(name="remove")
+@env_group.command(name="remove-build")
 @click.argument("name")
-def env_svc_remove(name: str) -> None:
-    """移除环境"""
+def env_remove_build(name: str) -> None:
+    """移除构建环境"""
     from framework.services.env_service import EnvService
     svc = EnvService()
-    if svc.remove(name):
-        click.echo(f"环境已移除: {name}")
+    if svc.remove_build_env(name):
+        click.echo(f"构建环境已移除: {name}")
     else:
-        click.echo(f"环境不存在: {name}")
+        click.echo(f"构建环境不存在: {name}")
 
 
-@env_group.command(name="provision")
+@env_group.command(name="remove-exe")
 @click.argument("name")
-def env_svc_provision(name: str) -> None:
-    """装配环境（验证工具链+变量解析）"""
+def env_remove_exe(name: str) -> None:
+    """移除执行环境"""
     from framework.services.env_service import EnvService
     svc = EnvService()
-    session = svc.provision(name)
-    click.echo(f"环境已装配: {name}  状态={session.status}  变量数={len(session.resolved_vars)}")
+    if svc.remove_exe_env(name):
+        click.echo(f"执行环境已移除: {name}")
+    else:
+        click.echo(f"执行环境不存在: {name}")
+
+
+@env_group.command(name="apply")
+@click.option("--build-env", default="", help="构建环境名称")
+@click.option("--exe-env", default="", help="执行环境名称")
+def env_apply(build_env: str, exe_env: str) -> None:
+    """申请环境会话"""
+    from framework.services.env_service import EnvService
+    svc = EnvService()
+    session = svc.apply(build_env_name=build_env, exe_env_name=exe_env)
+    click.echo(f"会话已创建: id={session.session_id}  状态={session.status}")
+    click.echo(f"工作目录: {session.work_dir}")
+    click.echo(f"变量数: {len(session.resolved_vars)}")
     for k, v in sorted(session.resolved_vars.items()):
         if k != "PATH":
             click.echo(f"  {k}={v}")
 
 
+@env_group.command(name="sessions")
+def env_sessions() -> None:
+    """列出活跃的环境会话"""
+    from framework.services.env_service import EnvService
+    svc = EnvService()
+    sessions = svc.list_sessions()
+    if not sessions:
+        click.echo("没有活跃的会话。")
+        return
+    for s in sessions:
+        click.echo(f"  {s['session_id']}  name={s['name']}  status={s['status']}")
+
+
 @env_group.command(name="exec")
-@click.argument("name")
+@click.option("--build-env", default="", help="构建环境名称")
+@click.option("--exe-env", default="", help="执行环境名称")
 @click.option("--cmd", required=True, help="要执行的命令")
 @click.option("--timeout", default=3600, help="超时时间（秒）")
-def env_svc_exec(name: str, cmd: str, timeout: int) -> None:
+def env_svc_exec(build_env: str, exe_env: str, cmd: str, timeout: int) -> None:
     """在指定环境中执行命令"""
     from framework.services.env_service import EnvService
     svc = EnvService()
-    session = svc.provision(name)
+    session = svc.apply(build_env_name=build_env, exe_env_name=exe_env)
     result = svc.execute_in(session, cmd, timeout=timeout)
-    svc.teardown(session)
+    svc.release(session)
     status = "成功" if result["success"] else "失败"
     click.echo(f"执行{status} (rc={result['returncode']})")
     if result["stdout"]:
         click.echo(result["stdout"])
     if result["stderr"]:
         click.echo(result["stderr"])
+
+
+def _parse_kv_pairs(pairs: tuple[str, ...]) -> dict[str, str]:
+    """解析 key=value 参数对"""
+    result: dict[str, str] = {}
+    for p in pairs:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            result[k.strip()] = v.strip()
+    return result
 
 
 # =========================================================================
@@ -707,6 +783,91 @@ def stimulus_acquire(name: str) -> None:
     click.echo(f"状态: {art.status}  路径: {art.local_path}  checksum: {art.checksum}")
 
 
+@stimulus_group.command(name="construct")
+@click.argument("name")
+@click.option("--param", multiple=True, help="构造参数 key=value（可多次）")
+def stimulus_construct(name: str, param: tuple[str, ...]) -> None:
+    """构造激励（模板+参数）"""
+    from framework.services.stimulus_service import StimulusService
+    params = _parse_kv_pairs(param)
+    svc = StimulusService()
+    art = svc.construct(name, params=params)
+    click.echo(f"状态: {art.status}  路径: {art.local_path}  checksum: {art.checksum}")
+
+
+@stimulus_group.command(name="add-result-stimulus")
+@click.argument("name")
+@click.option("--type", "source_type", default="api", type=click.Choice(["api", "binary"]))
+@click.option("--api-url", default="", help="API 地址")
+@click.option("--binary-path", default="", help="二进制文件路径")
+@click.option("--parser-cmd", default="", help="解析命令")
+@click.option("--desc", default="", help="描述")
+def stimulus_add_result(
+    name: str, source_type: str, api_url: str,
+    binary_path: str, parser_cmd: str, desc: str,
+) -> None:
+    """注册结果激励"""
+    from framework.core.models import ResultStimulusSpec
+    from framework.services.stimulus_service import StimulusService
+    spec = ResultStimulusSpec(
+        name=name, source_type=source_type,
+        api_url=api_url, binary_path=binary_path,
+        parser_cmd=parser_cmd, description=desc,
+    )
+    svc = StimulusService()
+    svc.register_result_stimulus(spec)
+    click.echo(f"结果激励已注册: {name} (type={source_type})")
+
+
+@stimulus_group.command(name="collect-result")
+@click.argument("name")
+def stimulus_collect_result(name: str) -> None:
+    """获取结果激励"""
+    from framework.services.stimulus_service import StimulusService
+    svc = StimulusService()
+    art = svc.collect_result_stimulus(name)
+    click.echo(f"状态: {art.status}  路径: {art.local_path}")
+    if art.message:
+        click.echo(f"信息: {art.message}")
+
+
+@stimulus_group.command(name="add-trigger")
+@click.argument("name")
+@click.option("--type", "trigger_type", default="api", type=click.Choice(["api", "binary"]))
+@click.option("--api-url", default="", help="API 地址")
+@click.option("--binary-cmd", default="", help="二进制命令")
+@click.option("--stimulus-name", default="", help="关联激励名称")
+@click.option("--desc", default="", help="描述")
+def stimulus_add_trigger(
+    name: str, trigger_type: str, api_url: str,
+    binary_cmd: str, stimulus_name: str, desc: str,
+) -> None:
+    """注册激励触发器"""
+    from framework.core.models import TriggerSpec
+    from framework.services.stimulus_service import StimulusService
+    spec = TriggerSpec(
+        name=name, trigger_type=trigger_type,
+        api_url=api_url, binary_cmd=binary_cmd,
+        stimulus_name=stimulus_name, description=desc,
+    )
+    svc = StimulusService()
+    svc.register_trigger(spec)
+    click.echo(f"触发器已注册: {name} (type={trigger_type})")
+
+
+@stimulus_group.command(name="fire")
+@click.argument("name")
+@click.option("--stimulus-path", default="", help="激励文件路径")
+def stimulus_fire(name: str, stimulus_path: str) -> None:
+    """触发激励"""
+    from framework.services.stimulus_service import StimulusService
+    svc = StimulusService()
+    result = svc.trigger(name, stimulus_path=stimulus_path)
+    click.echo(f"触发状态: {result.status}")
+    if result.message:
+        click.echo(f"信息: {result.message}")
+
+
 # =========================================================================
 # 构建管理
 # =========================================================================
@@ -767,13 +928,18 @@ def build_remove(name: str) -> None:
 
 @build_group.command(name="run")
 @click.argument("name")
-def build_run(name: str) -> None:
-    """执行构建"""
+@click.option("--repo-ref", default="", help="代码仓分支（新分支触发重建）")
+@click.option("--force", is_flag=True, help="强制重新构建（忽略缓存）")
+def build_run(name: str, repo_ref: str, force: bool) -> None:
+    """执行构建（相同分支自动跳过，新分支自动重建）"""
     from framework.services.build_service import BuildService
     svc = BuildService()
-    result = svc.build(name)
-    status = "成功" if result.status == "success" else "失败"
-    click.echo(f"构建{status}: {name} ({result.duration:.1f}s)")
+    result = svc.build(name, repo_ref=repo_ref, force=force)
+    if result.cached:
+        click.echo(f"构建缓存命中: {name} (ref={result.repo_ref}), 跳过重复构建")
+    else:
+        status = "成功" if result.status == "success" else "失败"
+        click.echo(f"构建{status}: {name} ({result.duration:.1f}s)")
     if result.output_path:
         click.echo(f"产物路径: {result.output_path}")
     if result.message:
@@ -826,6 +992,35 @@ def result_clean() -> None:
     click.echo(f"已清理 {count} 个结果文件")
 
 
+@result_group.command(name="upload")
+@click.option(
+    "--type", "upload_type", default="local",
+    type=click.Choice(["local", "api", "rsync"]),
+)
+@click.option("--api-url", default="", help="API 上传地址")
+@click.option("--api-token", default="", help="API 令牌")
+@click.option("--rsync-target", default="", help="rsync 目标 user@host:/path")
+@click.option("--ssh-key", default="", help="SSH 密钥路径")
+def result_upload(
+    upload_type: str, api_url: str, api_token: str,
+    rsync_target: str, ssh_key: str,
+) -> None:
+    """上传结果（本地/API/rsync）"""
+    from framework.services.result_service import ResultService, StorageConfig
+    cfg = StorageConfig(
+        upload_type=upload_type, api_url=api_url,
+        api_token=api_token, rsync_target=rsync_target,
+        ssh_key=ssh_key,
+    )
+    svc = ResultService()
+    result = svc.upload(config=cfg)
+    click.echo(f"上传状态: {result['status']}")
+    if result.get("message"):
+        click.echo(f"信息: {result['message']}")
+    if result.get("hint"):
+        click.echo(f"\n{result['hint']}")
+
+
 # =========================================================================
 # 编排执行
 # =========================================================================
@@ -835,7 +1030,9 @@ def result_clean() -> None:
 @click.argument("suite", default="default")
 @click.option("-p", "--parallel", default=1, help="并行度")
 @click.option("-c", "--config", default="configs/default.yml", help="配置文件")
-@click.option("-e", "--env", default="", help="执行环境")
+@click.option("--build-env", default="", help="构建环境名称")
+@click.option("--exe-env", default="", help="执行环境名称")
+@click.option("-e", "--env", default="", help="执行环境（兼容旧用法）")
 @click.option("--repo", multiple=True, help="代码仓名称（可多次）")
 @click.option("--build", "build_names", multiple=True, help="构建名称（可多次）")
 @click.option("--stimulus", multiple=True, help="激励名称（可多次）")
@@ -843,12 +1040,13 @@ def result_clean() -> None:
 @click.option("--case", multiple=True, help="用例名称（可多次）")
 @click.option("--param", multiple=True, help="参数 key=value（可多次）")
 def orchestrate(
-    suite: str, parallel: int, config: str, env: str,
+    suite: str, parallel: int, config: str,
+    build_env: str, exe_env: str, env: str,
     repo: tuple[str, ...], build_names: tuple[str, ...],
     stimulus: tuple[str, ...], snapshot: str,
     case: tuple[str, ...], param: tuple[str, ...],
 ) -> None:
-    """7 步编排执行（代码仓→环境→构建→激励→执行→收集→清理）"""
+    """7 步编排执行（环境→代码仓→构建→激励→执行→收集→清理）"""
     from framework.services.execution_orchestrator import (
         ExecutionOrchestrator,
         OrchestrationPlan,
@@ -862,7 +1060,9 @@ def orchestrate(
 
     plan = OrchestrationPlan(
         suite=suite, config_path=config, parallel=parallel,
-        repo_names=list(repo), environment=env,
+        build_env_name=build_env, exe_env_name=exe_env,
+        environment=env,
+        repo_names=list(repo),
         build_names=list(build_names), stimulus_names=list(stimulus),
         params=params, snapshot_id=snapshot, case_names=list(case),
     )

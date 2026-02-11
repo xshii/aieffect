@@ -2,7 +2,7 @@
 
 提供：回归结果查看、依赖包状态、手动触发回归、上传依赖包、
       用例表单管理、执行历史、日志检查、资源状态、外部结果录入、
-      存储对接。
+      存储对接、环境管理、激励管理、构建管理、结果管理、编排执行。
 
 启动方式: aieffect dashboard --port 8888
 """
@@ -268,7 +268,7 @@ def api_cases_delete(name: str):
 
 
 # =========================================================================
-# 环境管理 API
+# 环境管理 API（旧 — CaseManager 环境）
 # =========================================================================
 
 
@@ -553,7 +553,7 @@ def api_repos_workspaces():
 
 
 # =========================================================================
-# 环境服务 API
+# 环境服务 API（BuildEnv + ExeEnv）
 # =========================================================================
 
 
@@ -564,25 +564,52 @@ def api_envs_list():
     return jsonify(environments=svc.list_all())
 
 
-@app.route("/api/envs/<name>", methods=["GET"])
-def api_envs_get(name: str):
+@app.route("/api/envs/build", methods=["GET"])
+def api_envs_build_list():
     from framework.services.env_service import EnvService
     svc = EnvService()
-    spec = svc.get(name)
-    if spec is None:
-        return jsonify(error="环境不存在"), 404
-    return jsonify(environment=asdict(spec))
+    return jsonify(build_envs=svc.list_build_envs())
 
 
-@app.route("/api/envs", methods=["POST"])
-def api_envs_add():
-    from framework.core.models import EnvironmentSpec, ToolSpec
+@app.route("/api/envs/exe", methods=["GET"])
+def api_envs_exe_list():
+    from framework.services.env_service import EnvService
+    svc = EnvService()
+    return jsonify(exe_envs=svc.list_exe_envs())
+
+
+@app.route("/api/envs/build", methods=["POST"])
+def api_envs_build_add():
+    from framework.core.models import BuildEnvSpec
     from framework.services.env_service import EnvService
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
     if not name:
         return jsonify(error="需要提供 name"), 400
+    spec = BuildEnvSpec(
+        name=name,
+        build_env_type=body.get("build_env_type", "local"),
+        description=body.get("description", ""),
+        work_dir=body.get("work_dir", ""),
+        variables=body.get("variables", {}),
+        host=body.get("host", ""),
+        port=body.get("port", 22),
+        user=body.get("user", ""),
+        key_path=body.get("key_path", ""),
+    )
+    svc = EnvService()
+    entry = svc.register_build_env(spec)
+    return jsonify(message=f"构建环境已注册: {name}", build_env=entry)
 
+
+@app.route("/api/envs/exe", methods=["POST"])
+def api_envs_exe_add():
+    from framework.core.models import ExeEnvSpec, ToolSpec
+    from framework.services.env_service import EnvService
+    body = request.get_json(silent=True) or {}
+    name = body.get("name", "")
+    if not name:
+        return jsonify(error="需要提供 name"), 400
     tools: dict[str, ToolSpec] = {}
     for tname, tinfo in (body.get("tools") or {}).items():
         ti = tinfo if isinstance(tinfo, dict) else {}
@@ -591,34 +618,55 @@ def api_envs_add():
             install_path=ti.get("install_path", ""),
             env_vars=ti.get("env_vars", {}),
         )
-    spec = EnvironmentSpec(
-        name=name, description=body.get("description", ""),
-        tools=tools, variables=body.get("variables", {}),
+    spec = ExeEnvSpec(
+        name=name,
+        exe_env_type=body.get("exe_env_type", "eda"),
+        description=body.get("description", ""),
+        api_url=body.get("api_url", ""),
+        api_token=body.get("api_token", ""),
+        variables=body.get("variables", {}),
+        tools=tools,
         licenses=body.get("licenses", {}),
+        timeout=body.get("timeout", 3600),
+        build_env_name=body.get("build_env_name", ""),
     )
     svc = EnvService()
-    entry = svc.register(spec)
-    return jsonify(message=f"环境已注册: {name}", environment=entry)
+    entry = svc.register_exe_env(spec)
+    return jsonify(message=f"执行环境已注册: {name}", exe_env=entry)
 
 
-@app.route("/api/envs/<name>", methods=["DELETE"])
-def api_envs_delete(name: str):
+@app.route("/api/envs/build/<name>", methods=["DELETE"])
+def api_envs_build_delete(name: str):
     from framework.services.env_service import EnvService
     svc = EnvService()
-    if svc.remove(name):
-        return jsonify(message=f"环境已删除: {name}")
-    return jsonify(error="环境不存在"), 404
+    if svc.remove_build_env(name):
+        return jsonify(message=f"构建环境已删除: {name}")
+    return jsonify(error="构建环境不存在"), 404
 
 
-@app.route("/api/envs/<name>/provision", methods=["POST"])
-def api_envs_provision(name: str):
+@app.route("/api/envs/exe/<name>", methods=["DELETE"])
+def api_envs_exe_delete(name: str):
     from framework.services.env_service import EnvService
-    body = request.get_json(silent=True) or {}  # type: ignore[attr-defined]
+    svc = EnvService()
+    if svc.remove_exe_env(name):
+        return jsonify(message=f"执行环境已删除: {name}")
+    return jsonify(error="执行环境不存在"), 404
+
+
+@app.route("/api/envs/apply", methods=["POST"])
+def api_envs_apply():
+    from framework.services.env_service import EnvService
+    body = request.get_json(silent=True) or {}
     svc = EnvService()
     try:
-        session = svc.provision(name, work_dir=body.get("work_dir", ""))
+        session = svc.apply(
+            build_env_name=body.get("build_env_name", ""),
+            exe_env_name=body.get("exe_env_name", ""),
+        )
         return jsonify(
-            environment=name, status=session.status,
+            session_id=session.session_id,
+            name=session.name,
+            status=session.status,
             work_dir=session.work_dir,
             variables_count=len(session.resolved_vars),
         )
@@ -626,8 +674,48 @@ def api_envs_provision(name: str):
         return jsonify(error=str(e)), 400
 
 
-@app.route("/api/envs/<name>/execute", methods=["POST"])
-def api_envs_execute(name: str):
+@app.route("/api/envs/sessions", methods=["GET"])
+def api_envs_sessions():
+    from framework.services.env_service import EnvService
+    svc = EnvService()
+    return jsonify(sessions=svc.list_sessions())
+
+
+@app.route("/api/envs/sessions/<session_id>/release", methods=["POST"])
+def api_envs_release(session_id: str):
+    from framework.services.env_service import EnvService
+    svc = EnvService()
+    session = svc.get_session(session_id)
+    if session is None:
+        return jsonify(error="会话不存在"), 404
+    svc.release(session)
+    return jsonify(message="环境已释放", session_id=session_id)
+
+
+@app.route("/api/envs/sessions/<session_id>/timeout", methods=["POST"])
+def api_envs_timeout(session_id: str):
+    from framework.services.env_service import EnvService
+    svc = EnvService()
+    session = svc.get_session(session_id)
+    if session is None:
+        return jsonify(error="会话不存在"), 404
+    svc.timeout(session)
+    return jsonify(message="环境已超时", session_id=session_id)
+
+
+@app.route("/api/envs/sessions/<session_id>/invalid", methods=["POST"])
+def api_envs_invalid(session_id: str):
+    from framework.services.env_service import EnvService
+    svc = EnvService()
+    session = svc.get_session(session_id)
+    if session is None:
+        return jsonify(error="会话不存在"), 404
+    svc.invalid(session)
+    return jsonify(message="环境已失效", session_id=session_id)
+
+
+@app.route("/api/envs/execute", methods=["POST"])
+def api_envs_execute():
     from framework.services.env_service import EnvService
     body = request.get_json(silent=True) or {}  # type: ignore[attr-defined]
     cmd = body.get("cmd", "")
@@ -635,9 +723,14 @@ def api_envs_execute(name: str):
         return jsonify(error="需要提供 cmd"), 400
     svc = EnvService()
     try:
-        session = svc.provision(name)
-        result = svc.execute_in(session, cmd, timeout=body.get("timeout", 3600))
-        svc.teardown(session)
+        session = svc.apply(
+            build_env_name=body.get("build_env_name", ""),
+            exe_env_name=body.get("exe_env_name", ""),
+        )
+        result = svc.execute_in(
+            session, cmd, timeout=body.get("timeout", 3600),
+        )
+        svc.release(session)
         return jsonify(result=result)
     except Exception as e:
         return jsonify(error=str(e)), 400
@@ -678,7 +771,10 @@ def api_stimuli_add():
     repo = None
     if body.get("repo"):
         r = body["repo"]
-        repo = RepoSpec(name=r.get("name", name), url=r.get("url", ""), ref=r.get("ref", "main"))
+        repo = RepoSpec(
+            name=r.get("name", name), url=r.get("url", ""),
+            ref=r.get("ref", "main"),
+        )
 
     spec = StimulusSpec(
         name=name, source_type=body.get("source_type", "repo"),
@@ -686,6 +782,8 @@ def api_stimuli_add():
         storage_key=body.get("storage_key", ""),
         external_url=body.get("external_url", ""),
         description=body.get("description", ""),
+        params=body.get("params", {}),
+        template=body.get("template", ""),
     )
     svc = StimulusService()
     entry = svc.register(spec)
@@ -710,6 +808,116 @@ def api_stimuli_acquire(name: str):
         return jsonify(
             name=name, status=art.status,
             local_path=art.local_path, checksum=art.checksum,
+        )
+    except Exception as e:
+        return jsonify(error=str(e)), 400
+
+
+@app.route("/api/stimuli/<name>/construct", methods=["POST"])
+def api_stimuli_construct(name: str):
+    from framework.services.stimulus_service import StimulusService
+    body = request.get_json(silent=True) or {}  # type: ignore[attr-defined]
+    svc = StimulusService()
+    try:
+        art = svc.construct(name, params=body.get("params"))
+        return jsonify(
+            name=name, status=art.status,
+            local_path=art.local_path, checksum=art.checksum,
+        )
+    except Exception as e:
+        return jsonify(error=str(e)), 400
+
+
+# ---- 结果激励 API ----
+
+@app.route("/api/stimuli/result", methods=["GET"])
+def api_result_stimuli_list():
+    from framework.services.stimulus_service import StimulusService
+    svc = StimulusService()
+    return jsonify(result_stimuli=svc.list_result_stimuli())
+
+
+@app.route("/api/stimuli/result", methods=["POST"])
+def api_result_stimuli_add():
+    from framework.core.models import ResultStimulusSpec
+    from framework.services.stimulus_service import StimulusService
+    body = request.get_json(silent=True) or {}
+    name = body.get("name", "")
+    if not name:
+        return jsonify(error="需要提供 name"), 400
+    spec = ResultStimulusSpec(
+        name=name,
+        source_type=body.get("source_type", "api"),
+        api_url=body.get("api_url", ""),
+        api_token=body.get("api_token", ""),
+        binary_path=body.get("binary_path", ""),
+        parser_cmd=body.get("parser_cmd", ""),
+        description=body.get("description", ""),
+    )
+    svc = StimulusService()
+    entry = svc.register_result_stimulus(spec)
+    return jsonify(message=f"结果激励已注册: {name}", result_stimulus=entry)
+
+
+@app.route("/api/stimuli/result/<name>/collect", methods=["POST"])
+def api_result_stimuli_collect(name: str):
+    from framework.services.stimulus_service import StimulusService
+    svc = StimulusService()
+    try:
+        art = svc.collect_result_stimulus(name)
+        return jsonify(
+            name=name, status=art.status,
+            local_path=art.local_path, data=art.data,
+        )
+    except Exception as e:
+        return jsonify(error=str(e)), 400
+
+
+# ---- 激励触发 API ----
+
+@app.route("/api/stimuli/triggers", methods=["GET"])
+def api_triggers_list():
+    from framework.services.stimulus_service import StimulusService
+    svc = StimulusService()
+    return jsonify(triggers=svc.list_triggers())
+
+
+@app.route("/api/stimuli/triggers", methods=["POST"])
+def api_triggers_add():
+    from framework.core.models import TriggerSpec
+    from framework.services.stimulus_service import StimulusService
+    body = request.get_json(silent=True) or {}
+    name = body.get("name", "")
+    if not name:
+        return jsonify(error="需要提供 name"), 400
+    spec = TriggerSpec(
+        name=name,
+        trigger_type=body.get("trigger_type", "api"),
+        api_url=body.get("api_url", ""),
+        api_token=body.get("api_token", ""),
+        binary_cmd=body.get("binary_cmd", ""),
+        stimulus_name=body.get("stimulus_name", ""),
+        description=body.get("description", ""),
+    )
+    svc = StimulusService()
+    entry = svc.register_trigger(spec)
+    return jsonify(message=f"触发器已注册: {name}", trigger=entry)
+
+
+@app.route("/api/stimuli/triggers/<name>/fire", methods=["POST"])
+def api_triggers_fire(name: str):
+    from framework.services.stimulus_service import StimulusService
+    body = request.get_json(silent=True) or {}  # type: ignore[attr-defined]
+    svc = StimulusService()
+    try:
+        result = svc.trigger(
+            name,
+            stimulus_path=body.get("stimulus_path", ""),
+            payload=body.get("payload"),
+        )
+        return jsonify(
+            name=name, status=result.status,
+            message=result.message, response=result.response,
         )
     except Exception as e:
         return jsonify(error=str(e)), 400
@@ -772,11 +980,17 @@ def api_builds_run(name: str):
     body = request.get_json(silent=True) or {}  # type: ignore[attr-defined]
     svc = BuildService()
     try:
-        result = svc.build(name, work_dir=body.get("work_dir", ""))
+        result = svc.build(
+            name,
+            work_dir=body.get("work_dir", ""),
+            repo_ref=body.get("repo_ref", ""),
+            force=body.get("force", False),
+        )
         return jsonify(
             name=name, status=result.status,
             duration=result.duration, output_path=result.output_path,
-            message=result.message,
+            message=result.message, cached=result.cached,
+            repo_ref=result.repo_ref,
         )
     except Exception as e:
         return jsonify(error=str(e)), 400
@@ -807,6 +1021,16 @@ def api_results_export():
     return jsonify(message="报告已生成", path=path)
 
 
+@app.route("/api/results/upload", methods=["POST"])
+def api_results_upload():
+    from framework.services.result_service import ResultService, StorageConfig
+    body = request.get_json(silent=True) or {}
+    cfg = StorageConfig.from_dict(body.get("storage", {}))
+    svc = ResultService()
+    result = svc.upload(config=cfg, run_id=body.get("run_id", ""))
+    return jsonify(result)
+
+
 # =========================================================================
 # 编排执行 API
 # =========================================================================
@@ -823,9 +1047,11 @@ def api_orchestrate():
         suite=body.get("suite", "default"),
         config_path=body.get("config_path", "configs/default.yml"),
         parallel=body.get("parallel", 1),
+        build_env_name=body.get("build_env_name", ""),
+        exe_env_name=body.get("exe_env_name", ""),
+        environment=body.get("environment", ""),
         repo_names=body.get("repo_names", []),
         repo_ref_overrides=body.get("repo_ref_overrides", {}),
-        environment=body.get("environment", ""),
         build_names=body.get("build_names", []),
         stimulus_names=body.get("stimulus_names", []),
         params=body.get("params", {}),

@@ -47,11 +47,13 @@ class HistoryManager:
         environment: str = "",
         snapshot_id: str = "",
         params: dict | None = None,
+        meta: dict | None = None,
+        result_paths: dict | None = None,
     ) -> dict:
         """记录一次执行结果到历史"""
         from framework.core.models import summarize_statuses
 
-        entry = {
+        entry: dict = {
             "run_id": str(uuid.uuid4())[:8],
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
             "suite": suite,
@@ -61,6 +63,10 @@ class HistoryManager:
             "summary": summarize_statuses(results),
             "results": results,
         }
+        if meta:
+            entry["meta"] = meta
+        if result_paths:
+            entry["result_paths"] = result_paths
 
         records = self._load()
         records.append(entry)

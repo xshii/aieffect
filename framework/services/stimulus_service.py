@@ -1,15 +1,16 @@
-"""激励服务 — 激励源注册 / 获取 / 生成
+"""激励服务 — 激励管理 / 构造 / 结果激励 / 触发
 
-激励（stimulus）是驱动 DUT 的测试输入，来源可以是：
-  - repo: 从代码仓中检出
-  - generated: 通过命令动态生成
-  - stored: 从 Storage 中取回
-  - external: 从外部 URL 下载
+四大能力:
+  1. 激励管理: 激励源 CRUD（repo / generated / stored / external）
+  2. 激励构造: 基于模板 + 参数构建激励数据
+  3. 结果激励管理: 从执行结果中获取激励（API / 二进制）
+  4. 激励触发: 将激励注入到目标环境（API / 二进制工具）
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import shlex
 import subprocess
@@ -17,14 +18,26 @@ from pathlib import Path
 from typing import Any
 
 from framework.core.exceptions import CaseNotFoundError, ValidationError
-from framework.core.models import RepoSpec, StimulusArtifact, StimulusSpec
+from framework.core.models import (
+    RESULT_STIMULUS_API,
+    RESULT_STIMULUS_BINARY,
+    TRIGGER_API,
+    TRIGGER_BINARY,
+    RepoSpec,
+    ResultStimulusArtifact,
+    ResultStimulusSpec,
+    StimulusArtifact,
+    StimulusSpec,
+    TriggerResult,
+    TriggerSpec,
+)
 from framework.utils.yaml_io import load_yaml, save_yaml
 
 logger = logging.getLogger(__name__)
 
 
 class StimulusService:
-    """激励生命周期管理"""
+    """激励全生命周期管理"""
 
     def __init__(self, registry_file: str = "", artifact_dir: str = "") -> None:
         if not registry_file:
@@ -42,11 +55,21 @@ class StimulusService:
         result: dict[str, dict[str, Any]] = self._data.setdefault("stimuli", {})
         return result
 
+    def _result_stimuli(self) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = self._data.setdefault("result_stimuli", {})
+        return result
+
+    def _triggers(self) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = self._data.setdefault("triggers", {})
+        return result
+
     def _save(self) -> None:
         self.registry_file.parent.mkdir(parents=True, exist_ok=True)
         save_yaml(self.registry_file, self._data)
 
-    # ---- 注册 / CRUD ----
+    # =====================================================================
+    # 1. 激励管理 — CRUD
+    # =====================================================================
 
     def register(self, spec: StimulusSpec) -> dict[str, Any]:
         """注册激励源"""
@@ -61,6 +84,8 @@ class StimulusService:
             "generator_cmd": spec.generator_cmd,
             "storage_key": spec.storage_key,
             "external_url": spec.external_url,
+            "params": spec.params,
+            "template": spec.template,
         }
         if spec.repo:
             entry["repo"] = {
@@ -92,6 +117,8 @@ class StimulusService:
             storage_key=entry.get("storage_key", ""),
             external_url=entry.get("external_url", ""),
             description=entry.get("description", ""),
+            params=entry.get("params", {}),
+            template=entry.get("template", ""),
         )
 
     def list_all(self) -> list[dict[str, Any]]:
@@ -108,7 +135,9 @@ class StimulusService:
         logger.info("激励已移除: %s", name)
         return True
 
-    # ---- 获取 / 生成 ----
+    # =====================================================================
+    # 2. 激励获取 / 构造
+    # =====================================================================
 
     def acquire(self, name: str, *, work_dir: str = "") -> StimulusArtifact:
         """根据激励源类型获取激励产物"""
@@ -137,6 +166,81 @@ class StimulusService:
 
         logger.info("激励就绪: %s -> %s", name, artifact.local_path)
         return artifact
+
+    def construct(
+        self, name: str, *,
+        params: dict[str, str] | None = None,
+        work_dir: str = "",
+    ) -> StimulusArtifact:
+        """构造激励 — 基于模板 + 参数生成激励数据
+
+        构造流程:
+          1. 读取激励定义中的 template 和默认 params
+          2. 合并用户传入的 params（优先级更高）
+          3. 渲染模板或执行 generator_cmd（注入参数为环境变量）
+          4. 返回构造产物
+        """
+        spec = self.get(name)
+        if spec is None:
+            raise CaseNotFoundError(f"激励不存在: {name}")
+
+        dest = Path(work_dir) if work_dir else self.artifact_dir / f"{name}_constructed"
+        dest.mkdir(parents=True, exist_ok=True)
+
+        merged_params = {**spec.params, **(params or {})}
+
+        try:
+            if spec.template:
+                artifact = self._construct_from_template(spec, merged_params, dest)
+            elif spec.generator_cmd:
+                artifact = self._construct_with_cmd(spec, merged_params, dest)
+            else:
+                raise ValidationError("构造激励需要 template 或 generator_cmd")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+            logger.error("激励构造失败 %s: %s", name, e)
+            return StimulusArtifact(spec=spec, status="error")
+
+        logger.info("激励已构造: %s -> %s", name, artifact.local_path)
+        return artifact
+
+    def _construct_from_template(
+        self, spec: StimulusSpec, params: dict[str, str], dest: Path,
+    ) -> StimulusArtifact:
+        """从模板构造激励"""
+        template_path = Path(spec.template)
+        if template_path.is_file():
+            content = template_path.read_text(encoding="utf-8")
+        else:
+            content = spec.template
+
+        for key, value in params.items():
+            content = content.replace(f"${{{key}}}", value)
+            content = content.replace(f"$({key})", value)
+
+        out = dest / f"{spec.name}_stimulus.txt"
+        out.write_text(content, encoding="utf-8")
+        checksum = hashlib.sha256(content.encode()).hexdigest()[:16]
+        return StimulusArtifact(
+            spec=spec, local_path=str(out), checksum=checksum, status="ready",
+        )
+
+    def _construct_with_cmd(
+        self, spec: StimulusSpec, params: dict[str, str], dest: Path,
+    ) -> StimulusArtifact:
+        """通过命令构造激励（参数注入为环境变量）"""
+        import os
+        env = {**os.environ, **{f"STIM_{k.upper()}": v for k, v in params.items()}}
+        r = subprocess.run(
+            shlex.split(spec.generator_cmd),
+            capture_output=True, text=True, cwd=str(dest),
+            env=env, check=False,
+        )
+        if r.returncode != 0:
+            raise RuntimeError(f"构造失败 (rc={r.returncode}): {r.stderr[:500]}")
+        checksum = self._dir_checksum(dest)
+        return StimulusArtifact(
+            spec=spec, local_path=str(dest), checksum=checksum, status="ready",
+        )
 
     def _acquire_from_repo(self, spec: StimulusSpec, dest: Path) -> StimulusArtifact:
         """从代码仓检出激励"""
@@ -174,8 +278,6 @@ class StimulusService:
         data = storage.get("stimuli", spec.storage_key)
         if data is None:
             raise RuntimeError(f"Storage 中不存在: stimuli/{spec.storage_key}")
-        # 将 data 写入本地文件
-        import json
         out = dest / f"{spec.storage_key}.json"
         out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return StimulusArtifact(
@@ -194,6 +296,284 @@ class StimulusService:
         urllib.request.urlretrieve(spec.external_url, str(out))  # nosec B310
         return StimulusArtifact(
             spec=spec, local_path=str(out), status="ready",
+        )
+
+    # =====================================================================
+    # 3. 结果激励管理 — 从执行结果中获取激励数据
+    # =====================================================================
+
+    def register_result_stimulus(self, spec: ResultStimulusSpec) -> dict[str, Any]:
+        """注册结果激励"""
+        if not spec.name:
+            raise ValidationError("结果激励 name 为必填")
+        if spec.source_type not in (RESULT_STIMULUS_API, RESULT_STIMULUS_BINARY):
+            raise ValidationError(f"不支持的结果激励类型: {spec.source_type}")
+        entry: dict[str, Any] = {
+            "source_type": spec.source_type,
+            "api_url": spec.api_url,
+            "api_token": spec.api_token,
+            "binary_path": spec.binary_path,
+            "parser_cmd": spec.parser_cmd,
+            "description": spec.description,
+        }
+        self._result_stimuli()[spec.name] = entry
+        self._save()
+        logger.info("结果激励已注册: %s (type=%s)", spec.name, spec.source_type)
+        return entry
+
+    def get_result_stimulus(self, name: str) -> ResultStimulusSpec | None:
+        """获取结果激励定义"""
+        entry = self._result_stimuli().get(name)
+        if entry is None:
+            return None
+        return ResultStimulusSpec(
+            name=name,
+            source_type=entry.get("source_type", RESULT_STIMULUS_API),
+            api_url=entry.get("api_url", ""),
+            api_token=entry.get("api_token", ""),
+            binary_path=entry.get("binary_path", ""),
+            parser_cmd=entry.get("parser_cmd", ""),
+            description=entry.get("description", ""),
+        )
+
+    def list_result_stimuli(self) -> list[dict[str, Any]]:
+        """列出所有结果激励"""
+        return [{"name": k, **v} for k, v in self._result_stimuli().items()]
+
+    def remove_result_stimulus(self, name: str) -> bool:
+        """移除结果激励"""
+        rs = self._result_stimuli()
+        if name not in rs:
+            return False
+        del rs[name]
+        self._save()
+        return True
+
+    def collect_result_stimulus(
+        self, name: str, *, work_dir: str = "",
+    ) -> ResultStimulusArtifact:
+        """获取结果激励产物（通过 API 或读取二进制）"""
+        spec = self.get_result_stimulus(name)
+        if spec is None:
+            raise CaseNotFoundError(f"结果激励不存在: {name}")
+
+        dest = Path(work_dir) if work_dir else self.artifact_dir / f"result_{name}"
+        dest.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if spec.source_type == RESULT_STIMULUS_API:
+                return self._collect_via_api(spec, dest)
+            return self._collect_via_binary(spec, dest)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+            logger.error("结果激励获取失败 %s: %s", name, e)
+            return ResultStimulusArtifact(
+                spec=spec, status="error", message=str(e),
+            )
+
+    def _collect_via_api(
+        self, spec: ResultStimulusSpec, dest: Path,
+    ) -> ResultStimulusArtifact:
+        """通过 API 获取结果激励"""
+        if not spec.api_url:
+            raise ValidationError("API 类型结果激励必须指定 api_url")
+        from framework.utils.net import validate_url_scheme
+        validate_url_scheme(spec.api_url, context=f"result_stimulus {spec.name}")
+        import urllib.request
+        req = urllib.request.Request(spec.api_url)
+        if spec.api_token:
+            req.add_header("Authorization", f"Bearer {spec.api_token}")
+        with urllib.request.urlopen(req) as resp:  # nosec B310
+            raw = resp.read().decode("utf-8")
+
+        out = dest / f"{spec.name}_result.json"
+        out.write_text(raw, encoding="utf-8")
+        data: dict[str, Any] = {}
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+        return ResultStimulusArtifact(
+            spec=spec, local_path=str(out), data=data, status="ready",
+        )
+
+    def _collect_via_binary(
+        self, spec: ResultStimulusSpec, dest: Path,
+    ) -> ResultStimulusArtifact:
+        """通过读取二进制文件获取结果激励"""
+        if not spec.binary_path:
+            raise ValidationError("binary 类型结果激励必须指定 binary_path")
+        src = Path(spec.binary_path)
+        if not src.exists():
+            raise RuntimeError(f"二进制文件不存在: {spec.binary_path}")
+
+        out = dest / src.name
+        out.write_bytes(src.read_bytes())
+
+        data: dict[str, Any] = {}
+        if spec.parser_cmd:
+            r = subprocess.run(
+                shlex.split(spec.parser_cmd),
+                capture_output=True, text=True, cwd=str(dest), check=False,
+            )
+            if r.returncode != 0:
+                raise RuntimeError(f"解析失败 (rc={r.returncode}): {r.stderr[:500]}")
+            try:
+                data = json.loads(r.stdout)
+            except json.JSONDecodeError:
+                data = {"raw_output": r.stdout[:2000]}
+
+        return ResultStimulusArtifact(
+            spec=spec, local_path=str(out), data=data, status="ready",
+        )
+
+    # =====================================================================
+    # 4. 激励触发 — 将激励注入到目标环境
+    # =====================================================================
+
+    def register_trigger(self, spec: TriggerSpec) -> dict[str, Any]:
+        """注册激励触发器"""
+        if not spec.name:
+            raise ValidationError("触发器 name 为必填")
+        if spec.trigger_type not in (TRIGGER_API, TRIGGER_BINARY):
+            raise ValidationError(f"不支持的触发类型: {spec.trigger_type}")
+        entry: dict[str, Any] = {
+            "trigger_type": spec.trigger_type,
+            "api_url": spec.api_url,
+            "api_token": spec.api_token,
+            "binary_cmd": spec.binary_cmd,
+            "stimulus_name": spec.stimulus_name,
+            "description": spec.description,
+        }
+        self._triggers()[spec.name] = entry
+        self._save()
+        logger.info("触发器已注册: %s (type=%s)", spec.name, spec.trigger_type)
+        return entry
+
+    def get_trigger(self, name: str) -> TriggerSpec | None:
+        """获取触发器定义"""
+        entry = self._triggers().get(name)
+        if entry is None:
+            return None
+        return TriggerSpec(
+            name=name,
+            trigger_type=entry.get("trigger_type", TRIGGER_API),
+            api_url=entry.get("api_url", ""),
+            api_token=entry.get("api_token", ""),
+            binary_cmd=entry.get("binary_cmd", ""),
+            stimulus_name=entry.get("stimulus_name", ""),
+            description=entry.get("description", ""),
+        )
+
+    def list_triggers(self) -> list[dict[str, Any]]:
+        """列出所有触发器"""
+        return [{"name": k, **v} for k, v in self._triggers().items()]
+
+    def remove_trigger(self, name: str) -> bool:
+        """移除触发器"""
+        trigs = self._triggers()
+        if name not in trigs:
+            return False
+        del trigs[name]
+        self._save()
+        return True
+
+    def trigger(
+        self, name: str, *,
+        stimulus_path: str = "",
+        payload: dict[str, Any] | None = None,
+    ) -> TriggerResult:
+        """触发激励注入
+
+        Args:
+            name: 触发器名称
+            stimulus_path: 激励文件路径（可选，覆盖自动获取）
+            payload: 额外载荷数据（API 类型附加到请求体）
+        """
+        spec = self.get_trigger(name)
+        if spec is None:
+            raise CaseNotFoundError(f"触发器不存在: {name}")
+
+        if not stimulus_path and spec.stimulus_name:
+            art = self.acquire(spec.stimulus_name)
+            if art.status != "ready":
+                return TriggerResult(
+                    spec=spec, status="failed",
+                    message=f"关联激励获取失败: {spec.stimulus_name}",
+                )
+            stimulus_path = art.local_path
+
+        try:
+            if spec.trigger_type == TRIGGER_API:
+                return self._trigger_via_api(spec, stimulus_path, payload)
+            return self._trigger_via_binary(spec, stimulus_path)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+            logger.error("激励触发失败 %s: %s", name, e)
+            return TriggerResult(
+                spec=spec, status="failed", message=str(e),
+            )
+
+    def _trigger_via_api(
+        self, spec: TriggerSpec, stimulus_path: str,
+        payload: dict[str, Any] | None,
+    ) -> TriggerResult:
+        """通过 API 触发激励"""
+        if not spec.api_url:
+            raise ValidationError("API 触发器必须指定 api_url")
+        from framework.utils.net import validate_url_scheme
+        validate_url_scheme(spec.api_url, context=f"trigger {spec.name}")
+
+        import urllib.request
+        body: dict[str, Any] = {**(payload or {})}
+        if stimulus_path:
+            body["stimulus_path"] = stimulus_path
+            p = Path(stimulus_path)
+            if p.is_file() and p.suffix == ".json":
+                try:
+                    body["stimulus_data"] = json.loads(
+                        p.read_text(encoding="utf-8"),
+                    )
+                except json.JSONDecodeError:
+                    pass
+
+        data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            spec.api_url, data=data, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        if spec.api_token:
+            req.add_header("Authorization", f"Bearer {spec.api_token}")
+        with urllib.request.urlopen(req) as resp:  # nosec B310
+            resp_data = json.loads(resp.read().decode("utf-8"))
+
+        logger.info("API 触发成功: %s", spec.name)
+        return TriggerResult(
+            spec=spec, status="success", response=resp_data,
+        )
+
+    def _trigger_via_binary(
+        self, spec: TriggerSpec, stimulus_path: str,
+    ) -> TriggerResult:
+        """通过二进制工具触发激励"""
+        if not spec.binary_cmd:
+            raise ValidationError("binary 触发器必须指定 binary_cmd")
+        cmd = spec.binary_cmd
+        if stimulus_path:
+            cmd = f"{cmd} {stimulus_path}"
+        r = subprocess.run(
+            shlex.split(cmd), capture_output=True, text=True, check=False,
+        )
+        if r.returncode != 0:
+            raise RuntimeError(f"触发失败 (rc={r.returncode}): {r.stderr[:500]}")
+
+        response: dict[str, Any] = {"stdout": r.stdout[:2000]}
+        try:
+            response = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            pass
+
+        logger.info("binary 触发成功: %s", spec.name)
+        return TriggerResult(
+            spec=spec, status="success", response=response,
         )
 
     @staticmethod

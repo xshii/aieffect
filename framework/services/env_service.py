@@ -1,7 +1,18 @@
-"""环境服务 — 执行环境注册 / 装配 / 交互 / 回收
+"""环境服务 — 构建环境 + 执行环境的注册 / 申请 / 释放 / 超时 / 失效
 
-管理 EDA 工具链、环境变量、许可证等环境资源，
-提供「装配 → 交互 → 回收」的环境会话生命周期。
+环境分为两大类:
+  构建环境 (BuildEnv): local（本地）/ remote（远端服务器）
+  执行环境 (ExeEnv):   eda / fpga / silicon（均为 Web API）/ same_as_build
+
+公共生命周期: apply → (timeout | release | invalid)
+
+不同类型有独立的一套 API 实现，但共享公共接口:
+  apply()   — 申请环境资源，获得 session
+  timeout() — 标记超时
+  release() — 释放环境
+  invalid() — 标记失效
+
+编排顺序: 环境优先于代码仓（环境决定代码仓检出位置）
 """
 
 from __future__ import annotations
@@ -10,18 +21,234 @@ import logging
 import os
 import shlex
 import subprocess
+import uuid
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
 from framework.core.exceptions import CaseNotFoundError, ValidationError
-from framework.core.models import EnvironmentSpec, EnvSession, ToolSpec
+from framework.core.models import (
+    BUILD_ENV_LOCAL,
+    BUILD_ENV_REMOTE,
+    BUILD_ENV_TYPES,
+    ENV_APPLIED,
+    ENV_INVALID,
+    ENV_RELEASED,
+    ENV_TIMEOUT,
+    EXE_ENV_EDA,
+    EXE_ENV_FPGA,
+    EXE_ENV_SAME_AS_BUILD,
+    EXE_ENV_SILICON,
+    EXE_ENV_TYPES,
+    BuildEnvSpec,
+    EnvSession,
+    ExeEnvSpec,
+    ToolSpec,
+)
 from framework.utils.yaml_io import load_yaml, save_yaml
 
 logger = logging.getLogger(__name__)
 
 
+# =========================================================================
+# 环境处理器抽象基类
+# =========================================================================
+
+
+class BaseEnvHandler(ABC):
+    """环境处理器公共接口"""
+
+    @abstractmethod
+    def apply(self, session: EnvSession) -> EnvSession:
+        """申请环境资源"""
+
+    @abstractmethod
+    def release(self, session: EnvSession) -> EnvSession:
+        """释放环境资源"""
+
+    def timeout(self, session: EnvSession) -> EnvSession:
+        """标记超时"""
+        session.status = ENV_TIMEOUT
+        session.message = "环境超时"
+        logger.warning("环境超时: %s", session.name)
+        return session
+
+    def invalid(self, session: EnvSession) -> EnvSession:
+        """标记失效"""
+        session.status = ENV_INVALID
+        session.message = "环境已失效"
+        logger.warning("环境失效: %s", session.name)
+        return session
+
+
+# =========================================================================
+# 构建环境处理器
+# =========================================================================
+
+
+class LocalBuildHandler(BaseEnvHandler):
+    """本地构建环境"""
+
+    def apply(self, session: EnvSession) -> EnvSession:
+        spec = session.build_env
+        if spec is None:
+            session.status = ENV_INVALID
+            return session
+        work = spec.work_dir or str(Path("data/workspaces") / session.name)
+        Path(work).mkdir(parents=True, exist_ok=True)
+        session.work_dir = work
+        session.status = ENV_APPLIED
+        session.resolved_vars.update(spec.variables)
+        logger.info("本地构建环境已申请: %s -> %s", session.name, work)
+        return session
+
+    def release(self, session: EnvSession) -> EnvSession:
+        session.status = ENV_RELEASED
+        logger.info("本地构建环境已释放: %s", session.name)
+        return session
+
+
+class RemoteBuildHandler(BaseEnvHandler):
+    """远端服务器构建环境（SSH）"""
+
+    def apply(self, session: EnvSession) -> EnvSession:
+        spec = session.build_env
+        if spec is None or not spec.host:
+            session.status = ENV_INVALID
+            session.message = "远端构建环境缺少 host"
+            return session
+        work = spec.work_dir or f"/tmp/aieffect/{session.name}"
+        session.work_dir = work
+        session.status = ENV_APPLIED
+        session.resolved_vars.update(spec.variables)
+        session.resolved_vars["REMOTE_HOST"] = spec.host
+        session.resolved_vars["REMOTE_PORT"] = str(spec.port)
+        session.resolved_vars["REMOTE_USER"] = spec.user
+        logger.info("远端构建环境已申请: %s -> %s@%s:%s",
+                     session.name, spec.user, spec.host, work)
+        return session
+
+    def release(self, session: EnvSession) -> EnvSession:
+        session.status = ENV_RELEASED
+        logger.info("远端构建环境已释放: %s", session.name)
+        return session
+
+
+# =========================================================================
+# 执行环境处理器
+# =========================================================================
+
+
+class WebApiExeHandler(BaseEnvHandler):
+    """Web API 执行环境基类（eda / fpga / silicon 共享）"""
+
+    env_type_label: str = "WebAPI"
+
+    def apply(self, session: EnvSession) -> EnvSession:
+        spec = session.exe_env
+        if spec is None or not spec.api_url:
+            session.status = ENV_INVALID
+            session.message = f"{self.env_type_label} 缺少 api_url"
+            return session
+
+        session.status = ENV_APPLIED
+        session.resolved_vars.update(spec.variables)
+        session.resolved_vars["API_URL"] = spec.api_url
+        if spec.api_token:
+            session.resolved_vars["API_TOKEN"] = spec.api_token
+
+        # 工具链变量
+        for tool in spec.tools.values():
+            if tool.install_path:
+                session.resolved_vars[f"{tool.name.upper()}_HOME"] = tool.install_path
+            for vk, vv in tool.env_vars.items():
+                session.resolved_vars[vk] = vv
+
+        # 许可证
+        for lk, lv in spec.licenses.items():
+            session.resolved_vars[lk] = lv
+
+        logger.info("%s 执行环境已申请: %s (api=%s)",
+                     self.env_type_label, session.name, spec.api_url)
+        return session
+
+    def release(self, session: EnvSession) -> EnvSession:
+        session.status = ENV_RELEASED
+        logger.info("%s 执行环境已释放: %s", self.env_type_label, session.name)
+        return session
+
+
+class EdaExeHandler(WebApiExeHandler):
+    """EDA 仿真执行环境"""
+    env_type_label = "EDA"
+
+
+class FpgaExeHandler(WebApiExeHandler):
+    """FPGA 验证执行环境"""
+    env_type_label = "FPGA"
+
+
+class SiliconExeHandler(WebApiExeHandler):
+    """样片测试执行环境"""
+    env_type_label = "Silicon"
+
+
+class SameAsBuildExeHandler(BaseEnvHandler):
+    """同构建环境执行 — 复用构建环境的 work_dir 和变量"""
+
+    def apply(self, session: EnvSession) -> EnvSession:
+        if session.build_env is None:
+            session.status = ENV_INVALID
+            session.message = "same_as_build 需要关联构建环境"
+            return session
+        session.status = ENV_APPLIED
+        logger.info("同构建执行环境已申请: %s", session.name)
+        return session
+
+    def release(self, session: EnvSession) -> EnvSession:
+        session.status = ENV_RELEASED
+        logger.info("同构建执行环境已释放: %s", session.name)
+        return session
+
+
+# =========================================================================
+# 处理器工厂
+# =========================================================================
+
+_BUILD_HANDLERS: dict[str, type[BaseEnvHandler]] = {
+    BUILD_ENV_LOCAL: LocalBuildHandler,
+    BUILD_ENV_REMOTE: RemoteBuildHandler,
+}
+
+_EXE_HANDLERS: dict[str, type[BaseEnvHandler]] = {
+    EXE_ENV_EDA: EdaExeHandler,
+    EXE_ENV_FPGA: FpgaExeHandler,
+    EXE_ENV_SILICON: SiliconExeHandler,
+    EXE_ENV_SAME_AS_BUILD: SameAsBuildExeHandler,
+}
+
+
+def _get_build_handler(env_type: str) -> BaseEnvHandler:
+    cls = _BUILD_HANDLERS.get(env_type)
+    if cls is None:
+        raise ValidationError(f"不支持的构建环境类型: {env_type}")
+    return cls()
+
+
+def _get_exe_handler(env_type: str) -> BaseEnvHandler:
+    cls = _EXE_HANDLERS.get(env_type)
+    if cls is None:
+        raise ValidationError(f"不支持的执行环境类型: {env_type}")
+    return cls()
+
+
+# =========================================================================
+# 环境服务
+# =========================================================================
+
+
 class EnvService:
-    """执行环境生命周期管理"""
+    """环境全生命周期管理"""
 
     def __init__(self, registry_file: str = "") -> None:
         if not registry_file:
@@ -29,21 +256,76 @@ class EnvService:
             registry_file = getattr(get_config(), "envs_file", "data/environments.yml")
         self.registry_file = Path(registry_file)
         self._data: dict[str, Any] = load_yaml(self.registry_file)
+        self._sessions: dict[str, EnvSession] = {}
 
-    def _envs(self) -> dict[str, dict[str, Any]]:
-        result: dict[str, dict[str, Any]] = self._data.setdefault("environments", {})
+    def _build_envs(self) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = self._data.setdefault("build_envs", {})
+        return result
+
+    def _exe_envs(self) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = self._data.setdefault("exe_envs", {})
         return result
 
     def _save(self) -> None:
         self.registry_file.parent.mkdir(parents=True, exist_ok=True)
         save_yaml(self.registry_file, self._data)
 
-    # ---- 注册 / CRUD ----
+    # ---- 构建环境 CRUD ----
 
-    def register(self, spec: EnvironmentSpec) -> dict[str, Any]:
+    def register_build_env(self, spec: BuildEnvSpec) -> dict[str, Any]:
+        """注册构建环境"""
+        if not spec.name:
+            raise ValidationError("构建环境 name 为必填")
+        if spec.build_env_type not in BUILD_ENV_TYPES:
+            raise ValidationError(f"不支持的构建环境类型: {spec.build_env_type}")
+        entry: dict[str, Any] = {
+            "build_env_type": spec.build_env_type,
+            "description": spec.description,
+            "work_dir": spec.work_dir,
+            "variables": spec.variables,
+            "host": spec.host, "port": spec.port,
+            "user": spec.user, "key_path": spec.key_path,
+        }
+        self._build_envs()[spec.name] = entry
+        self._save()
+        logger.info("构建环境已注册: %s (type=%s)", spec.name, spec.build_env_type)
+        return entry
+
+    def get_build_env(self, name: str) -> BuildEnvSpec | None:
+        entry = self._build_envs().get(name)
+        if entry is None:
+            return None
+        return BuildEnvSpec(
+            name=name,
+            build_env_type=entry.get("build_env_type", BUILD_ENV_LOCAL),
+            description=entry.get("description", ""),
+            work_dir=entry.get("work_dir", ""),
+            variables=entry.get("variables", {}),
+            host=entry.get("host", ""),
+            port=entry.get("port", 22),
+            user=entry.get("user", ""),
+            key_path=entry.get("key_path", ""),
+        )
+
+    def list_build_envs(self) -> list[dict[str, Any]]:
+        return [{"name": k, **v} for k, v in self._build_envs().items()]
+
+    def remove_build_env(self, name: str) -> bool:
+        envs = self._build_envs()
+        if name not in envs:
+            return False
+        del envs[name]
+        self._save()
+        return True
+
+    # ---- 执行环境 CRUD ----
+
+    def register_exe_env(self, spec: ExeEnvSpec) -> dict[str, Any]:
         """注册执行环境"""
         if not spec.name:
-            raise ValidationError("环境 name 为必填")
+            raise ValidationError("执行环境 name 为必填")
+        if spec.exe_env_type not in EXE_ENV_TYPES:
+            raise ValidationError(f"不支持的执行环境类型: {spec.exe_env_type}")
         tools_dict: dict[str, dict[str, Any]] = {}
         for tname, tool in spec.tools.items():
             tools_dict[tname] = {
@@ -52,115 +334,155 @@ class EnvService:
                 "env_vars": tool.env_vars,
             }
         entry: dict[str, Any] = {
+            "exe_env_type": spec.exe_env_type,
             "description": spec.description,
-            "tools": tools_dict,
-            "variables": spec.variables,
-            "licenses": spec.licenses,
+            "api_url": spec.api_url, "api_token": spec.api_token,
+            "variables": spec.variables, "tools": tools_dict,
+            "licenses": spec.licenses, "timeout": spec.timeout,
+            "build_env_name": spec.build_env_name,
         }
-        self._envs()[spec.name] = entry
+        self._exe_envs()[spec.name] = entry
         self._save()
-        logger.info("环境已注册: %s", spec.name)
+        logger.info("执行环境已注册: %s (type=%s)", spec.name, spec.exe_env_type)
         return entry
 
-    def get(self, name: str) -> EnvironmentSpec | None:
-        """获取已注册环境定义"""
-        entry = self._envs().get(name)
+    def get_exe_env(self, name: str) -> ExeEnvSpec | None:
+        entry = self._exe_envs().get(name)
         if entry is None:
             return None
         tools: dict[str, ToolSpec] = {}
         for tname, tinfo in (entry.get("tools") or {}).items():
             ti = tinfo if isinstance(tinfo, dict) else {}
             tools[tname] = ToolSpec(
-                name=tname,
-                version=ti.get("version", ""),
+                name=tname, version=ti.get("version", ""),
                 install_path=ti.get("install_path", ""),
                 env_vars=ti.get("env_vars", {}),
             )
-        return EnvironmentSpec(
+        return ExeEnvSpec(
             name=name,
+            exe_env_type=entry.get("exe_env_type", EXE_ENV_EDA),
             description=entry.get("description", ""),
-            tools=tools,
+            api_url=entry.get("api_url", ""),
+            api_token=entry.get("api_token", ""),
             variables=entry.get("variables", {}),
+            tools=tools,
             licenses=entry.get("licenses", {}),
+            timeout=entry.get("timeout", 3600),
+            build_env_name=entry.get("build_env_name", ""),
         )
 
-    def list_all(self) -> list[dict[str, Any]]:
-        """列出所有已注册环境"""
-        return [{"name": k, **v} for k, v in self._envs().items()]
+    def list_exe_envs(self) -> list[dict[str, Any]]:
+        return [{"name": k, **v} for k, v in self._exe_envs().items()]
 
-    def remove(self, name: str) -> bool:
-        """移除环境注册"""
-        envs = self._envs()
+    def remove_exe_env(self, name: str) -> bool:
+        envs = self._exe_envs()
         if name not in envs:
             return False
         del envs[name]
         self._save()
-        logger.info("环境已移除: %s", name)
         return True
 
-    # ---- 装配 / 交互 / 回收 ----
+    # ---- 统一列表 ----
 
-    def provision(self, name: str, *, work_dir: str = "") -> EnvSession:
-        """装配环境：解析工具路径、拼合环境变量，返回可用的会话"""
-        spec = self.get(name)
-        if spec is None:
-            raise CaseNotFoundError(f"环境不存在: {name}")
+    def list_all(self) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for name, info in self._build_envs().items():
+            result.append({"name": name, "category": "build", **info})
+        for name, info in self._exe_envs().items():
+            result.append({"name": name, "category": "exe", **info})
+        return result
 
-        resolved: dict[str, str] = {}
+    # ---- 生命周期: apply / release / timeout / invalid ----
 
-        # 1. 许可证变量
-        for lic_name, lic_value in spec.licenses.items():
-            resolved[lic_name] = lic_value
+    def apply(
+        self, *, build_env_name: str = "", exe_env_name: str = "",
+    ) -> EnvSession:
+        """申请环境，返回 session"""
+        session_id = str(uuid.uuid4())[:8]
+        name = exe_env_name or build_env_name or "anonymous"
+        session = EnvSession(name=name, session_id=session_id)
 
-        # 2. 工具链路径 + 工具自带环境变量
-        path_parts: list[str] = []
-        for tool in spec.tools.values():
-            if tool.install_path:
-                bin_path = str(Path(tool.install_path) / "bin")
-                path_parts.append(bin_path)
-            for vk, vv in tool.env_vars.items():
-                resolved[vk] = vv.replace("{version}", tool.version).replace(
-                    "{install_path}", tool.install_path
-                )
+        if build_env_name:
+            spec = self.get_build_env(build_env_name)
+            if spec is None:
+                raise CaseNotFoundError(f"构建环境不存在: {build_env_name}")
+            session.build_env = spec
+            handler = _get_build_handler(spec.build_env_type)
+            session = handler.apply(session)
+            if session.status != ENV_APPLIED:
+                return session
 
-        # 3. 用户自定义变量
-        for vk, vv in spec.variables.items():
-            resolved[vk] = vv
+        if exe_env_name:
+            spec = self.get_exe_env(exe_env_name)
+            if spec is None:
+                raise CaseNotFoundError(f"执行环境不存在: {exe_env_name}")
+            session.exe_env = spec
+            if spec.exe_env_type == EXE_ENV_SAME_AS_BUILD and not session.build_env:
+                if spec.build_env_name:
+                    bspec = self.get_build_env(spec.build_env_name)
+                    if bspec:
+                        session.build_env = bspec
+                        bh = _get_build_handler(bspec.build_env_type)
+                        session = bh.apply(session)
+            handler = _get_exe_handler(spec.exe_env_type)
+            session = handler.apply(session)
 
-        # 4. PATH 追加
-        if path_parts:
-            existing = os.environ.get("PATH", "")
-            resolved["PATH"] = ":".join(path_parts) + (":" + existing if existing else "")
-
-        if not work_dir:
-            from framework.core.config import get_config
-            work_dir = str(Path(get_config().workspace_dir) / f"env_{name}")
-        Path(work_dir).mkdir(parents=True, exist_ok=True)
-
-        session = EnvSession(
-            environment=spec,
-            resolved_vars=resolved,
-            work_dir=work_dir,
-            status="ready",
-        )
-        logger.info("环境已装配: %s (%d 个变量, work_dir=%s)", name, len(resolved), work_dir)
+        self._sessions[session_id] = session
+        logger.info("环境会话已创建: id=%s, name=%s, status=%s",
+                     session_id, name, session.status)
         return session
+
+    def release(self, session: EnvSession) -> EnvSession:
+        """释放环境"""
+        if session.exe_env:
+            h = _get_exe_handler(session.exe_env.exe_env_type)
+            session = h.release(session)
+        if session.build_env:
+            h = _get_build_handler(session.build_env.build_env_type)
+            session = h.release(session)
+        session.status = ENV_RELEASED
+        self._sessions.pop(session.session_id, None)
+        return session
+
+    def timeout(self, session: EnvSession) -> EnvSession:
+        """标记超时"""
+        session.status = ENV_TIMEOUT
+        self._sessions.pop(session.session_id, None)
+        return session
+
+    def invalid(self, session: EnvSession) -> EnvSession:
+        """标记失效"""
+        session.status = ENV_INVALID
+        self._sessions.pop(session.session_id, None)
+        return session
+
+    def get_session(self, session_id: str) -> EnvSession | None:
+        return self._sessions.get(session_id)
+
+    def list_sessions(self) -> list[dict[str, str]]:
+        return [
+            {"session_id": s.session_id, "name": s.name, "status": s.status}
+            for s in self._sessions.values()
+        ]
+
+    # ---- 在环境中执行命令 ----
 
     def execute_in(
         self, session: EnvSession, cmd: str, *, timeout: int = 3600,
     ) -> dict[str, Any]:
-        """在已装配的环境会话中执行命令"""
-        if session.status != "ready":
+        """在已申请的环境会话中执行命令"""
+        if session.status != ENV_APPLIED:
             raise ValidationError(f"环境会话状态不可用: {session.status}")
 
         env = {**os.environ, **session.resolved_vars}
-        logger.info("执行命令: %s (env=%s)", cmd, session.environment.name)
+        work_dir = session.work_dir or "."
+        logger.info("执行命令: %s (session=%s)", cmd, session.session_id)
 
         try:
             result = subprocess.run(
                 shlex.split(cmd),
                 capture_output=True, text=True, timeout=timeout,
-                cwd=session.work_dir, env=env, check=False,
+                cwd=work_dir, env=env, check=False,
             )
             return {
                 "returncode": result.returncode,
@@ -169,14 +491,8 @@ class EnvService:
                 "success": result.returncode == 0,
             }
         except subprocess.TimeoutExpired:
+            self.timeout(session)
             return {
-                "returncode": -1,
-                "stdout": "",
-                "stderr": f"命令超时 ({timeout}s)",
-                "success": False,
+                "returncode": -1, "stdout": "",
+                "stderr": f"命令超时 ({timeout}s)", "success": False,
             }
-
-    def teardown(self, session: EnvSession) -> None:
-        """回收环境会话"""
-        session.status = "torn_down"
-        logger.info("环境已回收: %s", session.environment.name)

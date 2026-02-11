@@ -16,14 +16,17 @@ class TestOrchestrationPlan:
         assert plan.build_names == []
         assert plan.stimulus_names == []
         assert plan.environment == ""
+        assert plan.build_env_name == ""
+        assert plan.exe_env_name == ""
 
     def test_plan_with_all_fields(self):
         plan = OrchestrationPlan(
             suite="regression",
             parallel=4,
+            build_env_name="local_build",
+            exe_env_name="eda_env",
             repo_names=["rtl", "tb"],
             repo_ref_overrides={"rtl": "v2.0"},
-            environment="sim_env",
             build_names=["compile"],
             stimulus_names=["rand_vectors"],
             params={"seed": "42"},
@@ -33,6 +36,8 @@ class TestOrchestrationPlan:
         assert plan.suite == "regression"
         assert len(plan.repo_names) == 2
         assert plan.repo_ref_overrides["rtl"] == "v2.0"
+        assert plan.build_env_name == "local_build"
+        assert plan.exe_env_name == "eda_env"
 
 
 class TestOrchestrationReport:

@@ -80,3 +80,59 @@ class TestBuildService:
 
     def test_clean_nonexistent(self, svc):
         assert svc.clean("no_such") is False
+
+    # ---- 构建缓存 ----
+
+    def test_build_cache_hit(self, svc, tmp_path):
+        """同名同分支第二次构建应命中缓存"""
+        work = tmp_path / "cache_work"
+        work.mkdir()
+        svc.register(BuildSpec(name="cache_build", build_cmd="echo done"))
+        r1 = svc.build("cache_build", work_dir=str(work), repo_ref="main")
+        assert r1.status == "success"
+        assert r1.cached is False
+
+        r2 = svc.build("cache_build", work_dir=str(work), repo_ref="main")
+        assert r2.status == "cached"
+        assert r2.cached is True
+
+    def test_build_cache_miss_new_branch(self, svc, tmp_path):
+        """指定新分支应触发重新构建"""
+        work = tmp_path / "branch_work"
+        work.mkdir()
+        svc.register(BuildSpec(name="branch_build", build_cmd="echo done"))
+        r1 = svc.build("branch_build", work_dir=str(work), repo_ref="main")
+        assert r1.status == "success"
+        assert r1.cached is False
+
+        r2 = svc.build("branch_build", work_dir=str(work), repo_ref="develop")
+        assert r2.status == "success"
+        assert r2.cached is False
+
+    def test_build_force_rebuild(self, svc, tmp_path):
+        """force=True 应强制重建"""
+        work = tmp_path / "force_work"
+        work.mkdir()
+        svc.register(BuildSpec(name="force_build", build_cmd="echo done"))
+        svc.build("force_build", work_dir=str(work), repo_ref="main")
+        r = svc.build("force_build", work_dir=str(work), repo_ref="main", force=True)
+        assert r.status == "success"
+        assert r.cached is False
+
+    def test_is_cached(self, svc, tmp_path):
+        work = tmp_path / "is_cache_work"
+        work.mkdir()
+        svc.register(BuildSpec(name="chk", build_cmd="echo done"))
+        assert svc.is_cached("chk", "v1") is False
+        svc.build("chk", work_dir=str(work), repo_ref="v1")
+        assert svc.is_cached("chk", "v1") is True
+        assert svc.is_cached("chk", "v2") is False
+
+    def test_invalidate_cache(self, svc, tmp_path):
+        work = tmp_path / "inv_work"
+        work.mkdir()
+        svc.register(BuildSpec(name="inv", build_cmd="echo done"))
+        svc.build("inv", work_dir=str(work), repo_ref="main")
+        assert svc.is_cached("inv", "main") is True
+        svc.invalidate_cache("inv", "main")
+        assert svc.is_cached("inv", "main") is False

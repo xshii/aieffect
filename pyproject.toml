@@ -27,7 +27,7 @@ include = ["framework*"]
 aieffect = "framework.cli:main"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests/ut", "tests/st"]
 addopts = "-v --tb=short"
 
 [tool.ruff]
