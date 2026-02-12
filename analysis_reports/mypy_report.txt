@@ -2,7 +2,7 @@ framework/utils/yaml_io.py:14: error: Library stubs not installed for "yaml"  [i
 framework/utils/yaml_io.py:14: note: Hint: "python3 -m pip install types-PyYAML"
 framework/utils/yaml_io.py:14: note: (or run "mypy --install-types" to install all missing stub packages)
 framework/utils/yaml_io.py:14: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
-framework/services/stimulus_service.py:241: error: Returning Any from function declared to return "RepoService"  [no-any-return]
-framework/services/stimulus_service.py:241: note: Error code "no-any-return" not covered by "type: ignore" comment
+framework/services/stimulus_service.py:243: error: Returning Any from function declared to return "RepoService"  [no-any-return]
+framework/services/stimulus_service.py:243: note: Error code "no-any-return" not covered by "type: ignore" comment
 framework/services/build_service.py:53: error: Returning Any from function declared to return "RepoService"  [no-any-return]
 framework/services/build_service.py:53: note: Error code "no-any-return" not covered by "type: ignore" comment

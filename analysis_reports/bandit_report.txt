@@ -1,4 +1,4 @@
-Run started:2026-02-12 23:29:49.135756+00:00
+Run started:2026-02-12 23:49:19.207492+00:00
 
 Test results:
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -263,14 +263,14 @@ Test results:
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/env_service.py:478:21
-477	        try:
-478	            result = subprocess.run(
-479	                shlex.split(cmd),
-480	                capture_output=True, text=True, timeout=timeout,
-481	                cwd=work_dir, env=env, check=False,
-482	            )
-483	            return {
+   Location: framework/services/env_service.py:482:21
+481	        try:
+482	            result = subprocess.run(
+483	                shlex.split(cmd),
+484	                capture_output=True, text=True, timeout=timeout,
+485	                cwd=work_dir, env=env, check=False,
+486	            )
+487	            return {
 
 --------------------------------------------------
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -287,156 +287,156 @@ Test results:
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b607_start_process_with_partial_path.html
-   Location: framework/services/repo_service.py:333:16
-332	        if (workspace / ".git").exists():
-333	            r = subprocess.run(
-334	                ["git", "fetch", "--depth", "1", "origin", ref],
-335	                cwd=str(workspace), capture_output=True, text=True, check=False,
-336	            )
-337	            if r.returncode != 0:
+   Location: framework/services/repo_service.py:336:16
+335	        if (workspace / ".git").exists():
+336	            r = subprocess.run(
+337	                ["git", "fetch", "--depth", "1", "origin", ref],
+338	                cwd=str(workspace), capture_output=True, text=True, check=False,
+339	            )
+340	            if r.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/repo_service.py:333:16
-332	        if (workspace / ".git").exists():
-333	            r = subprocess.run(
-334	                ["git", "fetch", "--depth", "1", "origin", ref],
-335	                cwd=str(workspace), capture_output=True, text=True, check=False,
-336	            )
-337	            if r.returncode != 0:
+   Location: framework/services/repo_service.py:336:16
+335	        if (workspace / ".git").exists():
+336	            r = subprocess.run(
+337	                ["git", "fetch", "--depth", "1", "origin", ref],
+338	                cwd=str(workspace), capture_output=True, text=True, check=False,
+339	            )
+340	            if r.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b607_start_process_with_partial_path.html
-   Location: framework/services/repo_service.py:341:16
-340	                )
-341	            r = subprocess.run(
-342	                ["git", "checkout", "FETCH_HEAD"],
-343	                cwd=str(workspace), capture_output=True, text=True, check=False,
-344	            )
-345	            if r.returncode != 0:
+   Location: framework/services/repo_service.py:344:16
+343	                )
+344	            r = subprocess.run(
+345	                ["git", "checkout", "FETCH_HEAD"],
+346	                cwd=str(workspace), capture_output=True, text=True, check=False,
+347	            )
+348	            if r.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/repo_service.py:341:16
-340	                )
-341	            r = subprocess.run(
-342	                ["git", "checkout", "FETCH_HEAD"],
-343	                cwd=str(workspace), capture_output=True, text=True, check=False,
-344	            )
-345	            if r.returncode != 0:
+   Location: framework/services/repo_service.py:344:16
+343	                )
+344	            r = subprocess.run(
+345	                ["git", "checkout", "FETCH_HEAD"],
+346	                cwd=str(workspace), capture_output=True, text=True, check=False,
+347	            )
+348	            if r.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b607_start_process_with_partial_path.html
-   Location: framework/services/repo_service.py:350:21
-349	        else:
-350	            result = subprocess.run(
-351	                ["git", "clone", "--depth", "1", "--branch", ref, url, str(workspace)],
-352	                capture_output=True, text=True, check=False,
-353	            )
-354	            if result.returncode != 0:
+   Location: framework/services/repo_service.py:353:21
+352	        else:
+353	            result = subprocess.run(
+354	                ["git", "clone", "--depth", "1", "--branch", ref, url, str(workspace)],
+355	                capture_output=True, text=True, check=False,
+356	            )
+357	            if result.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/repo_service.py:350:21
-349	        else:
-350	            result = subprocess.run(
-351	                ["git", "clone", "--depth", "1", "--branch", ref, url, str(workspace)],
-352	                capture_output=True, text=True, check=False,
-353	            )
-354	            if result.returncode != 0:
+   Location: framework/services/repo_service.py:353:21
+352	        else:
+353	            result = subprocess.run(
+354	                ["git", "clone", "--depth", "1", "--branch", ref, url, str(workspace)],
+355	                capture_output=True, text=True, check=False,
+356	            )
+357	            if result.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b607_start_process_with_partial_path.html
-   Location: framework/services/repo_service.py:356:21
-355	                # 回退: 完整 clone + checkout
-356	                r2 = subprocess.run(
-357	                    ["git", "clone", url, str(workspace)],
-358	                    capture_output=True, text=True, check=False,
-359	                )
-360	                if r2.returncode != 0:
+   Location: framework/services/repo_service.py:359:21
+358	                # 回退: 完整 clone + checkout
+359	                r2 = subprocess.run(
+360	                    ["git", "clone", url, str(workspace)],
+361	                    capture_output=True, text=True, check=False,
+362	                )
+363	                if r2.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/repo_service.py:356:21
-355	                # 回退: 完整 clone + checkout
-356	                r2 = subprocess.run(
-357	                    ["git", "clone", url, str(workspace)],
-358	                    capture_output=True, text=True, check=False,
-359	                )
-360	                if r2.returncode != 0:
+   Location: framework/services/repo_service.py:359:21
+358	                # 回退: 完整 clone + checkout
+359	                r2 = subprocess.run(
+360	                    ["git", "clone", url, str(workspace)],
+361	                    capture_output=True, text=True, check=False,
+362	                )
+363	                if r2.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b607_start_process_with_partial_path.html
-   Location: framework/services/repo_service.py:364:21
-363	                    )
-364	                r3 = subprocess.run(
-365	                    ["git", "checkout", ref],
-366	                    cwd=str(workspace), capture_output=True, text=True, check=False,
-367	                )
-368	                if r3.returncode != 0:
+   Location: framework/services/repo_service.py:367:21
+366	                    )
+367	                r3 = subprocess.run(
+368	                    ["git", "checkout", ref],
+369	                    cwd=str(workspace), capture_output=True, text=True, check=False,
+370	                )
+371	                if r3.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/repo_service.py:364:21
-363	                    )
-364	                r3 = subprocess.run(
-365	                    ["git", "checkout", ref],
-366	                    cwd=str(workspace), capture_output=True, text=True, check=False,
-367	                )
-368	                if r3.returncode != 0:
+   Location: framework/services/repo_service.py:367:21
+366	                    )
+367	                r3 = subprocess.run(
+368	                    ["git", "checkout", ref],
+369	                    cwd=str(workspace), capture_output=True, text=True, check=False,
+370	                )
+371	                if r3.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b607_start_process_with_partial_path.html
-   Location: framework/services/repo_service.py:375:12
-374	    def _get_commit_sha(workspace: Path) -> str:
-375	        r = subprocess.run(
-376	            ["git", "rev-parse", "HEAD"],
-377	            cwd=str(workspace), capture_output=True, text=True, check=False,
-378	        )
-379	        return r.stdout.strip()[:12] if r.returncode == 0 else ""
+   Location: framework/services/repo_service.py:378:12
+377	    def _get_commit_sha(workspace: Path) -> str:
+378	        r = subprocess.run(
+379	            ["git", "rev-parse", "HEAD"],
+380	            cwd=str(workspace), capture_output=True, text=True, check=False,
+381	        )
+382	        return r.stdout.strip()[:12] if r.returncode == 0 else ""
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/repo_service.py:375:12
-374	    def _get_commit_sha(workspace: Path) -> str:
-375	        r = subprocess.run(
-376	            ["git", "rev-parse", "HEAD"],
-377	            cwd=str(workspace), capture_output=True, text=True, check=False,
-378	        )
-379	        return r.stdout.strip()[:12] if r.returncode == 0 else ""
+   Location: framework/services/repo_service.py:378:12
+377	    def _get_commit_sha(workspace: Path) -> str:
+378	        r = subprocess.run(
+379	            ["git", "rev-parse", "HEAD"],
+380	            cwd=str(workspace), capture_output=True, text=True, check=False,
+381	        )
+382	        return r.stdout.strip()[:12] if r.returncode == 0 else ""
 
 --------------------------------------------------
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -476,52 +476,52 @@ Test results:
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/stimulus_service.py:227:12
-226	        env = {**os.environ, **{f"STIM_{k.upper()}": v for k, v in params.items()}}
-227	        r = subprocess.run(
-228	            shlex.split(spec.generator_cmd),
-229	            capture_output=True, text=True, cwd=str(dest),
-230	            env=env, check=False,
-231	        )
-232	        if r.returncode != 0:
+   Location: framework/services/stimulus_service.py:229:12
+228	        env = {**os.environ, **{f"STIM_{k.upper()}": v for k, v in params.items()}}
+229	        r = subprocess.run(
+230	            shlex.split(spec.generator_cmd),
+231	            capture_output=True, text=True, cwd=str(dest),
+232	            env=env, check=False,
+233	        )
+234	        if r.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/stimulus_service.py:260:12
-259	            raise ValidationError("generated 类型激励必须指定 generator_cmd")
-260	        r = subprocess.run(
-261	            shlex.split(spec.generator_cmd),
-262	            capture_output=True, text=True, cwd=str(dest), check=False,
-263	        )
-264	        if r.returncode != 0:
+   Location: framework/services/stimulus_service.py:262:12
+261	            raise ValidationError("generated 类型激励必须指定 generator_cmd")
+262	        r = subprocess.run(
+263	            shlex.split(spec.generator_cmd),
+264	            capture_output=True, text=True, cwd=str(dest), check=False,
+265	        )
+266	        if r.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/stimulus_service.py:413:16
-412	        if spec.parser_cmd:
-413	            r = subprocess.run(
-414	                shlex.split(spec.parser_cmd),
-415	                capture_output=True, text=True, cwd=str(dest), check=False,
-416	            )
-417	            if r.returncode != 0:
+   Location: framework/services/stimulus_service.py:415:16
+414	        if spec.parser_cmd:
+415	            r = subprocess.run(
+416	                shlex.split(spec.parser_cmd),
+417	                capture_output=True, text=True, cwd=str(dest), check=False,
+418	            )
+419	            if r.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/stimulus_service.py:561:12
-560	            cmd = f"{cmd} {stimulus_path}"
-561	        r = subprocess.run(
-562	            shlex.split(cmd), capture_output=True, text=True, check=False,
-563	        )
-564	        if r.returncode != 0:
+   Location: framework/services/stimulus_service.py:563:12
+562	            cmd = f"{cmd} {stimulus_path}"
+563	        r = subprocess.run(
+564	            shlex.split(cmd), capture_output=True, text=True, check=False,
+565	        )
+566	        if r.returncode != 0:
 
 --------------------------------------------------
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -549,7 +549,7 @@ Test results:
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 5704
+	Total lines of code: 5726
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 10
 
