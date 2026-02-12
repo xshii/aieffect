@@ -95,18 +95,6 @@ class ResourceManager:
                 timestamp=time.time(),
             )
 
-    def wait_for_available(self, timeout: float = 300, poll_interval: float = 5) -> bool:
-        """等待直到有可用资源，超时返回 False"""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            s = self.status()
-            if s.available > 0:
-                return True
-            logger.info("等待资源释放... (%d/%d 使用中)", s.in_use, s.capacity)
-            time.sleep(poll_interval)
-        logger.warning("等待资源超时 (%.0f秒)", timeout)
-        return False
-
     def _query_api(self) -> ResourceStatus:
         """通过外部 API 查询资源状态"""
         if not self.api_url:
