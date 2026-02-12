@@ -1,17 +1,19 @@
 """集中配置管理
 
 替代各模块散落的 DEFAULT_* 常量，提供统一的配置入口。
-支持从 YAML 文件加载 + 编程式覆盖。
+支持从 YAML 文件加载 + 编程式覆盖。线程安全。
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 
 from framework.utils.yaml_io import load_yaml
 
 logger = logging.getLogger(__name__)
+_lock = threading.Lock()
 
 
 @dataclass
@@ -69,16 +71,20 @@ _current: Config | None = None
 
 
 def get_config() -> Config:
-    """获取当前配置（未初始化则返回默认值）"""
+    """获取当前配置（未初始化则返回默认值），线程安全"""
     global _current  # noqa: PLW0603
-    if _current is None:
-        _current = Config()
-    return _current
+    if _current is not None:
+        return _current
+    with _lock:
+        if _current is None:
+            _current = Config()
+        return _current
 
 
 def init_config(path: str = "configs/default.yml") -> Config:
-    """从文件初始化全局配置"""
+    """从文件初始化全局配置，线程安全"""
     global _current  # noqa: PLW0603
-    _current = Config.from_file(path)
+    with _lock:
+        _current = Config.from_file(path)
     logger.info("配置已加载: %s", path)
     return _current

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import re
-import shlex
 import subprocess
 import tarfile
 import urllib.request
@@ -24,15 +23,18 @@ from typing import Any
 
 from framework.core.exceptions import ValidationError
 from framework.core.models import CaseRepoBinding, RepoSpec, RepoWorkspace
-from framework.utils.yaml_io import load_yaml, save_yaml
+from framework.core.registry import YamlRegistry
+from framework.utils.shell import run_cmd
 
 logger = logging.getLogger(__name__)
 
 _SAFE_REF_RE = re.compile(r"^[a-zA-Z0-9_./@\-]+$")
 
 
-class RepoService:
+class RepoService(YamlRegistry):
     """代码仓生命周期管理"""
+
+    section_key = "repos"
 
     def __init__(self, registry_file: str = "", workspace_root: str = "") -> None:
         if not registry_file:
@@ -41,20 +43,10 @@ class RepoService:
         if not workspace_root:
             from framework.core.config import get_config
             workspace_root = get_config().workspace_dir
-        self.registry_file = Path(registry_file)
+        super().__init__(registry_file)
         self.workspace_root = Path(workspace_root)
         self.workspace_root.mkdir(parents=True, exist_ok=True)
-        self._data: dict[str, Any] = load_yaml(self.registry_file)
-        # 工作目录缓存: (name, ref) → RepoWorkspace，实现跨用例复用
         self._workspace_cache: dict[tuple[str, str], RepoWorkspace] = {}
-
-    def _repos(self) -> dict[str, dict[str, Any]]:
-        result: dict[str, dict[str, Any]] = self._data.setdefault("repos", {})
-        return result
-
-    def _save(self) -> None:
-        self.registry_file.parent.mkdir(parents=True, exist_ok=True)
-        save_yaml(self.registry_file, self._data)
 
     # ---- 注册 / CRUD ----
 
@@ -82,14 +74,13 @@ class RepoService:
             "build_cmd": spec.build_cmd,
             "deps": spec.deps,
         }
-        self._repos()[spec.name] = entry
-        self._save()
+        self._put(spec.name, entry)
         logger.info("代码仓已注册: %s (type=%s)", spec.name, spec.source_type)
         return entry
 
     def get(self, name: str) -> RepoSpec | None:
         """获取已注册代码仓定义"""
-        entry = self._repos().get(name)
+        entry = self._get_raw(name)
         if entry is None:
             return None
         return RepoSpec(
@@ -108,16 +99,11 @@ class RepoService:
         )
 
     def list_all(self) -> list[dict[str, Any]]:
-        """列出所有已注册代码仓"""
-        return [{"name": k, **v} for k, v in self._repos().items()]
+        return self._list_raw()
 
     def remove(self, name: str) -> bool:
-        """移除代码仓注册信息"""
-        repos = self._repos()
-        if name not in repos:
+        if not self._remove(name):
             return False
-        del repos[name]
-        self._save()
         logger.info("代码仓已移除: %s", name)
         return True
 
@@ -171,9 +157,9 @@ class RepoService:
             return
         try:
             if spec.setup_cmd:
-                self._run_step("setup", spec.setup_cmd, cwd)
+                run_cmd(spec.setup_cmd, cwd=str(cwd), label="setup")
             if spec.build_cmd:
-                self._run_step("build", spec.build_cmd, cwd)
+                run_cmd(spec.build_cmd, cwd=str(cwd), label="build")
             ws.local_path = str(cwd)
         except RuntimeError as e:
             ws.status = "error"
@@ -201,11 +187,11 @@ class RepoService:
             self._clone_or_fetch(spec.url, ref, workspace)
             ws.commit_sha = self._get_commit_sha(workspace)
             ws.status = "updated"
+            logger.info("Git 就绪: %s@%s -> %s", spec.name, ref, workspace)
         except (subprocess.SubprocessError, OSError) as e:
             ws.status = "error"
             logger.error("Git 检出失败 %s@%s: %s", spec.name, ref, e)
 
-        logger.info("Git 就绪: %s@%s -> %s", spec.name, ref, workspace)
         return ws
 
     # ---- Tar 解压 ----
@@ -344,28 +330,45 @@ class RepoService:
     @staticmethod
     def _clone_or_fetch(url: str, ref: str, workspace: Path) -> None:
         if (workspace / ".git").exists():
-            subprocess.run(
+            r = subprocess.run(
                 ["git", "fetch", "--depth", "1", "origin", ref],
-                cwd=str(workspace), capture_output=True, check=False,
+                cwd=str(workspace), capture_output=True, text=True, check=False,
             )
-            subprocess.run(
+            if r.returncode != 0:
+                raise subprocess.SubprocessError(
+                    f"git fetch 失败 (rc={r.returncode}): {r.stderr[:300]}"
+                )
+            r = subprocess.run(
                 ["git", "checkout", "FETCH_HEAD"],
-                cwd=str(workspace), capture_output=True, check=False,
+                cwd=str(workspace), capture_output=True, text=True, check=False,
             )
+            if r.returncode != 0:
+                raise subprocess.SubprocessError(
+                    f"git checkout 失败 (rc={r.returncode}): {r.stderr[:300]}"
+                )
         else:
             result = subprocess.run(
                 ["git", "clone", "--depth", "1", "--branch", ref, url, str(workspace)],
                 capture_output=True, text=True, check=False,
             )
             if result.returncode != 0:
-                subprocess.run(
+                # 回退: 完整 clone + checkout
+                r2 = subprocess.run(
                     ["git", "clone", url, str(workspace)],
                     capture_output=True, text=True, check=False,
                 )
-                subprocess.run(
+                if r2.returncode != 0:
+                    raise subprocess.SubprocessError(
+                        f"git clone 失败 (rc={r2.returncode}): {r2.stderr[:300]}"
+                    )
+                r3 = subprocess.run(
                     ["git", "checkout", ref],
-                    cwd=str(workspace), capture_output=True, check=False,
+                    cwd=str(workspace), capture_output=True, text=True, check=False,
                 )
+                if r3.returncode != 0:
+                    raise subprocess.SubprocessError(
+                        f"git checkout 失败 (rc={r3.returncode}): {r3.stderr[:300]}"
+                    )
 
     @staticmethod
     def _get_commit_sha(workspace: Path) -> str:
@@ -375,12 +378,3 @@ class RepoService:
         )
         return r.stdout.strip()[:12] if r.returncode == 0 else ""
 
-    @staticmethod
-    def _run_step(label: str, cmd_str: str, cwd: Path) -> None:
-        logger.info("  %s: %s", label, cmd_str)
-        r = subprocess.run(
-            shlex.split(cmd_str), capture_output=True, text=True,
-            cwd=str(cwd), check=False,
-        )
-        if r.returncode != 0:
-            raise RuntimeError(f"{label}失败 (rc={r.returncode}): {r.stderr[:500]}")

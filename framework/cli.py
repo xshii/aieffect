@@ -48,7 +48,7 @@ def run(
             params[k.strip()] = v.strip()
 
     svc = RunService()
-    svc.execute(RunRequest(
+    svc.execute_and_persist(RunRequest(
         suite=suite, config_path=config, parallel=parallel,
         environment=env, params=params or None,
         snapshot_id=snapshot,
@@ -258,33 +258,6 @@ def cases_remove(name: str) -> None:
         click.echo(f"用例已删除: {name}")
     else:
         click.echo(f"用例不存在: {name}")
-
-
-# =========================================================================
-# 环境管理
-# =========================================================================
-
-
-@cases_group.command(name="env-add")
-@click.argument("name")
-@click.option("--desc", default="", help="描述")
-def env_add(name: str, desc: str) -> None:
-    """添加执行环境"""
-    cm = CaseManager()
-    cm.add_environment(name, description=desc)
-    click.echo(f"环境已添加: {name}")
-
-
-@cases_group.command(name="env-list")
-def env_list() -> None:
-    """列出所有环境"""
-    cm = CaseManager()
-    envs = cm.list_environments()
-    if not envs:
-        click.echo("没有已注册的环境。")
-        return
-    for e in envs:
-        click.echo(f"  {e['name']:20s} {e.get('description', '')}")
 
 
 # =========================================================================

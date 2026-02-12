@@ -45,7 +45,7 @@ from framework.core.models import (
     ExeEnvSpec,
     ToolSpec,
 )
-from framework.utils.yaml_io import load_yaml, save_yaml
+from framework.core.registry import YamlRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -247,28 +247,24 @@ def _get_exe_handler(env_type: str) -> BaseEnvHandler:
 # =========================================================================
 
 
-class EnvService:
+class EnvService(YamlRegistry):
     """环境全生命周期管理"""
+
+    section_key = "build_envs"
 
     def __init__(self, registry_file: str = "") -> None:
         if not registry_file:
             from framework.core.config import get_config
             registry_file = getattr(get_config(), "envs_file", "data/environments.yml")
-        self.registry_file = Path(registry_file)
-        self._data: dict[str, Any] = load_yaml(self.registry_file)
+        super().__init__(registry_file)
         self._sessions: dict[str, EnvSession] = {}
 
     def _build_envs(self) -> dict[str, dict[str, Any]]:
-        result: dict[str, dict[str, Any]] = self._data.setdefault("build_envs", {})
-        return result
+        return self._section()
 
     def _exe_envs(self) -> dict[str, dict[str, Any]]:
         result: dict[str, dict[str, Any]] = self._data.setdefault("exe_envs", {})
         return result
-
-    def _save(self) -> None:
-        self.registry_file.parent.mkdir(parents=True, exist_ok=True)
-        save_yaml(self.registry_file, self._data)
 
     # ---- 构建环境 CRUD ----
 

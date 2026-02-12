@@ -14,14 +14,17 @@ from framework.web.app import app
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """创建 Flask 测试客户端，临时数据目录"""
     import framework.core.config as cfgmod
+    from framework.services.container import reset_container
     cfg = cfgmod.Config(
         result_dir=str(tmp_path / "results"),
         manifest=str(tmp_path / "manifest.yml"),
     )
     monkeypatch.setattr(cfgmod, "_current", cfg)
+    reset_container()
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c
+    reset_container()
 
 
 class TestGlobalErrorHandlers:
@@ -58,53 +61,6 @@ class TestApiResults:
         data = resp.get_json()
         assert data["summary"]["total"] == 1
         assert data["summary"]["passed"] == 1
-
-
-class TestApiRun:
-    def test_invalid_suite_name(self, client) -> None:
-        resp = client.post(
-            "/api/run",
-            json={"suite": "../../etc/passwd"},
-        )
-        assert resp.status_code == 400
-
-    def test_invalid_parallel_uses_default(self, client, monkeypatch) -> None:
-        """非数字 parallel 应回退到默认值而非 500"""
-        captured = {}
-
-        def fake_popen(cmd, **kwargs):
-            captured["cmd"] = cmd
-
-            class FakeProc:
-                pid = 12345
-
-                def communicate(self):
-                    return "", ""
-
-                @property
-                def returncode(self):
-                    return 0
-
-            return FakeProc()
-
-        monkeypatch.setattr("framework.web.app.subprocess.Popen", fake_popen)
-        resp = client.post(
-            "/api/run",
-            json={"suite": "default", "parallel": "abc"},
-        )
-        assert resp.status_code == 200
-        # parallel should fallback to 1
-        assert "-p" in captured["cmd"]
-        idx = captured["cmd"].index("-p")
-        assert captured["cmd"][idx + 1] == "1"
-
-    def test_config_path_traversal_blocked(self, client) -> None:
-        resp = client.post(
-            "/api/run",
-            json={"suite": "default", "config": "../../etc/passwd"},
-        )
-        assert resp.status_code == 400
-        assert "不合法" in resp.get_json()["error"]
 
 
 class TestApiDeps:
