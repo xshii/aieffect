@@ -61,8 +61,6 @@ class TaskResult:
     duration: float = 0.0  # 秒
     message: str = ""
     log_path: str = ""
-    artifacts: dict[str, str] = field(default_factory=dict)
-    metrics: dict[str, Any] = field(default_factory=dict)
     meta: TestMeta | None = None
     result_paths: ResultDataPath | None = None
 
@@ -151,7 +149,6 @@ class RepoSpec:
     setup_cmd: str = ""        # 依赖安装命令
     build_cmd: str = ""        # 编译命令
     deps: list[str] = field(default_factory=list)   # 关联依赖包名列表
-    credentials: str = ""      # 凭证标识
 
 
 @dataclass
@@ -245,16 +242,6 @@ class ExeEnvSpec:
 
     # same_as_build 特有
     build_env_name: str = ""       # 引用的构建环境名称
-
-
-@dataclass
-class EnvironmentSpec:
-    """完整环境配置 — 组合构建环境 + 执行环境"""
-
-    name: str
-    description: str = ""
-    build_env: BuildEnvSpec | None = None
-    exe_env: ExeEnvSpec | None = None
 
 
 @dataclass

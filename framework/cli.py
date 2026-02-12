@@ -261,33 +261,6 @@ def cases_remove(name: str) -> None:
 
 
 # =========================================================================
-# 环境管理
-# =========================================================================
-
-
-@cases_group.command(name="env-add")
-@click.argument("name")
-@click.option("--desc", default="", help="描述")
-def env_add(name: str, desc: str) -> None:
-    """添加执行环境"""
-    cm = CaseManager()
-    cm.add_environment(name, description=desc)
-    click.echo(f"环境已添加: {name}")
-
-
-@cases_group.command(name="env-list")
-def env_list() -> None:
-    """列出所有环境"""
-    cm = CaseManager()
-    envs = cm.list_environments()
-    if not envs:
-        click.echo("没有已注册的环境。")
-        return
-    for e in envs:
-        click.echo(f"  {e['name']:20s} {e.get('description', '')}")
-
-
-# =========================================================================
 # 构建版本快照
 # =========================================================================
 

@@ -1,6 +1,6 @@
 """轻量级 Web 看板（基于 Flask）
 
-提供：回归结果查看、依赖包状态、手动触发回归、上传依赖包、
+提供：回归结果查看、依赖包状态、上传依赖包、
       用例表单管理、执行历史、日志检查、资源状态、外部结果录入、
       存储对接、环境管理、激励管理、构建管理、结果管理、编排执行。
 
@@ -18,8 +18,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import subprocess
-import threading
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -88,7 +86,7 @@ def index():
 
 
 # =========================================================================
-# 核心 API（结果、依赖、运行、上传）
+# 核心 API（结果、依赖、上传）
 # =========================================================================
 
 
@@ -121,52 +119,6 @@ def api_deps():
         if info:
             packages.append({"name": name, **info})
     return jsonify(packages=packages)
-
-
-def _wait_and_log(proc: subprocess.Popen[str], cmd: list[str]) -> None:
-    try:
-        stdout, _ = proc.communicate()
-        logger.info("回归完成 (pid=%d, rc=%d): %s", proc.pid, proc.returncode, cmd)
-        if proc.returncode != 0 and stdout:
-            logger.warning("回归输出 (pid=%d):\n%s", proc.pid, stdout[:2000])
-    except (OSError, subprocess.SubprocessError):
-        logger.exception("等待回归进程 (pid=%d) 时出错", proc.pid)
-
-
-def _build_run_cmd(body: dict[str, Any]) -> list[str]:
-    suite = _validate_safe_name(body.get("suite", "default"), "suite")
-    parallel = _safe_int(body.get("parallel", 1), default=1, lo=1, hi=64)
-    configs_base = Path("configs").resolve()
-    config_file = (configs_base / body.get("config", "default.yml")).resolve()
-    if not str(config_file).startswith(str(configs_base)):
-        raise ValueError("config 路径不合法")
-    if not config_file.suffix:
-        config_file = config_file.with_suffix(".yml")
-    cmd = ["aieffect", "run", suite, "-p", str(parallel), "-c", str(config_file)]
-    for flag, key in [("-e", "environment"), ("--snapshot", "snapshot")]:
-        val = body.get(key, "")
-        if val:
-            cmd.extend([flag, _validate_safe_name(val, key)])
-    for k, v in (body.get("params") or {}).items():
-        cmd.extend(["--param", f"{k}={v}"])
-    for cn in body.get("cases") or []:
-        cmd.extend(["--case", _validate_safe_name(cn, "case")])
-    return cmd
-
-
-@app.route("/api/run", methods=["POST"])
-def api_run():
-    body = request.get_json(silent=True) or {}
-    try:
-        cmd = _build_run_cmd(body)
-    except (ValueError, TypeError) as e:
-        return jsonify(error=str(e)), 400
-    logger.info("手动触发回归: %s", cmd)
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
-    threading.Thread(target=_wait_and_log, args=(proc, cmd), daemon=True).start()
-    return jsonify(message="回归已触发", pid=proc.pid, command=" ".join(cmd))
 
 
 @app.route("/api/deps/upload", methods=["POST"])
@@ -233,7 +185,6 @@ def api_cases_add():
         tags=body.get("tags", []),
         timeout=body.get("timeout", 3600),
         environments=body.get("environments", []),
-        params_schema=body.get("params_schema"),
     )
     return jsonify(message=f"用例已保存: {name}", case={"name": name, **case})
 
@@ -254,31 +205,6 @@ def api_cases_delete(name: str):
     if CaseManager().remove_case(name):
         return jsonify(message=f"用例已删除: {name}")
     return jsonify(error="用例不存在"), 404
-
-
-# =========================================================================
-# 环境管理 API（旧 — CaseManager 环境）
-# =========================================================================
-
-
-@app.route("/api/environments", methods=["GET"])
-def api_env_list():
-    from framework.core.case_manager import CaseManager
-    return jsonify(environments=CaseManager().list_environments())
-
-
-@app.route("/api/environments", methods=["POST"])
-def api_env_add():
-    from framework.core.case_manager import CaseManager
-    body = request.get_json(silent=True) or {}
-    name = body.get("name", "")
-    if not name:
-        return jsonify(error="需要提供 name"), 400
-    env = CaseManager().add_environment(
-        name, description=body.get("description", ""),
-        variables=body.get("variables"),
-    )
-    return jsonify(message=f"环境已保存: {name}", environment={"name": name, **env})
 
 
 # =========================================================================

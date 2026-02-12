@@ -54,33 +54,6 @@ class TestCaseManager:
         assert updated["cmd"] == "echo new"
         assert updated["timeout"] == 120
 
-    def test_validate_params(self, tmp_path: Path) -> None:
-        cm = CaseManager(cases_file=str(tmp_path / "cases.yml"))
-        cm.add_case("tc1", "run {mode}", params_schema={
-            "mode": {"type": "choice", "choices": ["fast", "full"]},
-            "seed": {"type": "string", "default": "0"},
-        })
-
-        errors = cm.validate_params("tc1", {"mode": "fast"})
-        assert errors == []
-
-        errors = cm.validate_params("tc1", {"mode": "invalid"})
-        assert len(errors) == 1
-
-        errors = cm.validate_params("tc1", {})
-        assert len(errors) == 1  # mode 缺失，seed 有默认值
-
-    def test_environment_crud(self, tmp_path: Path) -> None:
-        cm = CaseManager(cases_file=str(tmp_path / "cases.yml"))
-        cm.add_environment("sim", description="仿真环境", variables={"TOOL": "vcs"})
-
-        envs = cm.list_environments()
-        assert len(envs) == 1
-        assert envs[0]["name"] == "sim"
-
-        assert cm.remove_environment("sim") is True
-        assert cm.list_environments() == []
-
     def test_persistence(self, tmp_path: Path) -> None:
         path = str(tmp_path / "cases.yml")
         cm1 = CaseManager(cases_file=path)

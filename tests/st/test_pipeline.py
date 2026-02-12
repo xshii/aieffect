@@ -141,38 +141,3 @@ class TestAtomicWrite:
         assert len(records) == 2
 
 
-class TestCaseManagerBridge:
-    def test_to_test_cases(self, tmp_path: Path) -> None:
-        from framework.core.case_manager import CaseManager
-
-        cm = CaseManager(cases_file=str(tmp_path / "cases.yml"))
-        cm.add_case("tc1", "echo 1", tags=["smoke"])
-        cm.add_case("tc2", "echo 2", tags=["full"])
-
-        cases = cm.to_test_cases()
-        assert len(cases) == 2
-        assert all(isinstance(c, Case) for c in cases)
-        assert cases[0].name == "tc1"
-        assert cases[0].args["cmd"] == "echo 1"
-
-    def test_to_test_cases_filter(self, tmp_path: Path) -> None:
-        from framework.core.case_manager import CaseManager
-
-        cm = CaseManager(cases_file=str(tmp_path / "cases.yml"))
-        cm.add_case("tc1", "echo 1", tags=["smoke"])
-        cm.add_case("tc2", "echo 2", tags=["full"])
-
-        cases = cm.to_test_cases(tag="smoke")
-        assert len(cases) == 1
-        assert cases[0].name == "tc1"
-
-    def test_to_test_cases_by_name(self, tmp_path: Path) -> None:
-        from framework.core.case_manager import CaseManager
-
-        cm = CaseManager(cases_file=str(tmp_path / "cases.yml"))
-        cm.add_case("tc1", "echo 1")
-        cm.add_case("tc2", "echo 2")
-
-        cases = cm.to_test_cases(names=["tc2"])
-        assert len(cases) == 1
-        assert cases[0].name == "tc2"

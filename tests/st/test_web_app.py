@@ -63,53 +63,6 @@ class TestApiResults:
         assert data["summary"]["passed"] == 1
 
 
-class TestApiRun:
-    def test_invalid_suite_name(self, client) -> None:
-        resp = client.post(
-            "/api/run",
-            json={"suite": "../../etc/passwd"},
-        )
-        assert resp.status_code == 400
-
-    def test_invalid_parallel_uses_default(self, client, monkeypatch) -> None:
-        """非数字 parallel 应回退到默认值而非 500"""
-        captured = {}
-
-        def fake_popen(cmd, **kwargs):
-            captured["cmd"] = cmd
-
-            class FakeProc:
-                pid = 12345
-
-                def communicate(self):
-                    return "", ""
-
-                @property
-                def returncode(self):
-                    return 0
-
-            return FakeProc()
-
-        monkeypatch.setattr("framework.web.app.subprocess.Popen", fake_popen)
-        resp = client.post(
-            "/api/run",
-            json={"suite": "default", "parallel": "abc"},
-        )
-        assert resp.status_code == 200
-        # parallel should fallback to 1
-        assert "-p" in captured["cmd"]
-        idx = captured["cmd"].index("-p")
-        assert captured["cmd"][idx + 1] == "1"
-
-    def test_config_path_traversal_blocked(self, client) -> None:
-        resp = client.post(
-            "/api/run",
-            json={"suite": "default", "config": "../../etc/passwd"},
-        )
-        assert resp.status_code == 400
-        assert "不合法" in resp.get_json()["error"]
-
-
 class TestApiDeps:
     def test_empty_deps(self, client) -> None:
         resp = client.get("/api/deps")
