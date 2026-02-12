@@ -176,6 +176,7 @@ class RepoService(YamlRegistry):
     # ---- Git 检出 ----
 
     def _checkout_git(self, spec: RepoSpec, ref: str) -> RepoWorkspace:
+        """从Git仓库检出代码到本地工作空间"""
         if ref and not _SAFE_REF_RE.match(ref):
             raise ValidationError(f"ref 包含非法字符: {ref}")
 
@@ -197,6 +198,7 @@ class RepoService(YamlRegistry):
     # ---- Tar 解压 ----
 
     def _checkout_tar(self, spec: RepoSpec, ref: str) -> RepoWorkspace:
+        """从tar包解压代码到本地工作空间"""
         workspace = self.workspace_root / spec.name / (ref or "default")
         workspace.mkdir(parents=True, exist_ok=True)
         ws = RepoWorkspace(spec=spec, local_path=str(workspace))
@@ -228,6 +230,7 @@ class RepoService(YamlRegistry):
     # ---- API 下载 ----
 
     def _checkout_api(self, spec: RepoSpec, ref: str) -> RepoWorkspace:
+        """通过API下载代码包到本地工作空间"""
         workspace = self.workspace_root / spec.name / (ref or "default")
         workspace.mkdir(parents=True, exist_ok=True)
         ws = RepoWorkspace(spec=spec, local_path=str(workspace))

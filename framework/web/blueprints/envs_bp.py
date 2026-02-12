@@ -2,33 +2,35 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
+
+from framework.core.exceptions import AIEffectError
 
 envs_bp = Blueprint("envs", __name__, url_prefix="/api/envs")
 
 
-def _env_svc():
+def _env_svc():  # type: ignore[no-untyped-def]
     from framework.services.container import get_container
     return get_container().env
 
 
 @envs_bp.route("", methods=["GET"])
-def list_all():
+def list_all() -> Response:
     return jsonify(environments=_env_svc().list_all())
 
 
 @envs_bp.route("/build", methods=["GET"])
-def build_list():
+def build_list() -> Response:
     return jsonify(build_envs=_env_svc().list_build_envs())
 
 
 @envs_bp.route("/exe", methods=["GET"])
-def exe_list():
+def exe_list() -> Response:
     return jsonify(exe_envs=_env_svc().list_exe_envs())
 
 
 @envs_bp.route("/build", methods=["POST"])
-def build_add():
+def build_add() -> tuple[Response, int] | Response:
     from framework.core.models import BuildEnvSpec
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
@@ -50,7 +52,7 @@ def build_add():
 
 
 @envs_bp.route("/exe", methods=["POST"])
-def exe_add():
+def exe_add() -> tuple[Response, int] | Response:
     from framework.core.models import ExeEnvSpec, ToolSpec
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
@@ -81,21 +83,21 @@ def exe_add():
 
 
 @envs_bp.route("/build/<name>", methods=["DELETE"])
-def build_delete(name: str):
+def build_delete(name: str) -> tuple[Response, int] | Response:
     if _env_svc().remove_build_env(name):
         return jsonify(message=f"构建环境已删除: {name}")
     return jsonify(error="构建环境不存在"), 404
 
 
 @envs_bp.route("/exe/<name>", methods=["DELETE"])
-def exe_delete(name: str):
+def exe_delete(name: str) -> tuple[Response, int] | Response:
     if _env_svc().remove_exe_env(name):
         return jsonify(message=f"执行环境已删除: {name}")
     return jsonify(error="执行环境不存在"), 404
 
 
 @envs_bp.route("/apply", methods=["POST"])
-def apply():
+def apply() -> tuple[Response, int] | Response:
     body = request.get_json(silent=True) or {}
     try:
         session = _env_svc().apply(
@@ -108,17 +110,17 @@ def apply():
             work_dir=session.work_dir,
             variables_count=len(session.resolved_vars),
         )
-    except Exception as e:
+    except AIEffectError as e:
         return jsonify(error=str(e)), 400
 
 
 @envs_bp.route("/sessions", methods=["GET"])
-def sessions():
+def sessions() -> Response:
     return jsonify(sessions=_env_svc().list_sessions())
 
 
 @envs_bp.route("/sessions/<session_id>/release", methods=["POST"])
-def release(session_id: str):
+def release(session_id: str) -> tuple[Response, int] | Response:
     svc = _env_svc()
     session = svc.get_session(session_id)
     if session is None:
@@ -128,7 +130,7 @@ def release(session_id: str):
 
 
 @envs_bp.route("/sessions/<session_id>/timeout", methods=["POST"])
-def timeout(session_id: str):
+def timeout(session_id: str) -> tuple[Response, int] | Response:
     svc = _env_svc()
     session = svc.get_session(session_id)
     if session is None:
@@ -138,7 +140,7 @@ def timeout(session_id: str):
 
 
 @envs_bp.route("/sessions/<session_id>/invalid", methods=["POST"])
-def invalid(session_id: str):
+def invalid(session_id: str) -> tuple[Response, int] | Response:
     svc = _env_svc()
     session = svc.get_session(session_id)
     if session is None:
@@ -148,7 +150,7 @@ def invalid(session_id: str):
 
 
 @envs_bp.route("/execute", methods=["POST"])
-def execute():
+def execute() -> tuple[Response, int] | Response:
     body = request.get_json(silent=True) or {}
     cmd = body.get("cmd", "")
     if not cmd:
@@ -162,5 +164,5 @@ def execute():
         result = svc.execute_in(session, cmd, timeout=body.get("timeout", 3600))
         svc.release(session)
         return jsonify(result=result)
-    except Exception as e:
+    except AIEffectError as e:
         return jsonify(error=str(e)), 400

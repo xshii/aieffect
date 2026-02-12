@@ -28,6 +28,7 @@ class HistoryManager:
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
 
     def _load(self) -> list[dict]:
+        """从历史文件加载所有执行记录"""
         if not self.history_file.exists():
             return []
         with open(self.history_file, encoding="utf-8") as f:
@@ -35,6 +36,7 @@ class HistoryManager:
         return data if isinstance(data, list) else []
 
     def _save(self, records: list[dict]) -> None:
+        """原子性保存执行记录到历史文件"""
         from framework.utils.yaml_io import atomic_write
         content = json.dumps(records, indent=2, ensure_ascii=False)
         atomic_write(self.history_file, content)

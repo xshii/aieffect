@@ -229,6 +229,7 @@ _EXE_HANDLERS: dict[str, type[BaseEnvHandler]] = {
 
 
 def _get_build_handler(env_type: str) -> BaseEnvHandler:
+    """根据环境类型获取构建环境处理器实例"""
     cls = _BUILD_HANDLERS.get(env_type)
     if cls is None:
         raise ValidationError(f"不支持的构建环境类型: {env_type}")
@@ -236,6 +237,7 @@ def _get_build_handler(env_type: str) -> BaseEnvHandler:
 
 
 def _get_exe_handler(env_type: str) -> BaseEnvHandler:
+    """根据环境类型获取执行环境处理器实例"""
     cls = _EXE_HANDLERS.get(env_type)
     if cls is None:
         raise ValidationError(f"不支持的执行环境类型: {env_type}")
@@ -260,9 +262,11 @@ class EnvService(YamlRegistry):
         self._sessions: dict[str, EnvSession] = {}
 
     def _build_envs(self) -> dict[str, dict[str, Any]]:
+        """获取构建环境配置字典"""
         return self._section()
 
     def _exe_envs(self) -> dict[str, dict[str, Any]]:
+        """获取执行环境配置字典"""
         result: dict[str, dict[str, Any]] = self._data.setdefault("exe_envs", {})
         return result
 

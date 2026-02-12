@@ -15,7 +15,10 @@ import logging
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from framework.services.repo_service import RepoService
 
 from framework.core.exceptions import CaseNotFoundError, ValidationError
 from framework.core.models import (
@@ -57,10 +60,12 @@ class StimulusService(YamlRegistry):
         self._repo_service = repo_service
 
     def _result_stimuli_section(self) -> dict[str, dict[str, Any]]:
+        """获取结果激励配置段（从执行结果中提取的激励）"""
         result: dict[str, dict[str, Any]] = self._data.setdefault("result_stimuli", {})
         return result
 
     def _triggers_section(self) -> dict[str, dict[str, Any]]:
+        """获取触发器配置段（激励注入方式定义）"""
         result: dict[str, dict[str, Any]] = self._data.setdefault("triggers", {})
         return result
 
@@ -233,9 +238,9 @@ class StimulusService(YamlRegistry):
             spec=spec, local_path=str(dest), checksum=checksum, status="ready",
         )
 
-    def _get_repo_service(self):
+    def _get_repo_service(self) -> RepoService:
         if self._repo_service is not None:
-            return self._repo_service
+            return self._repo_service  # type: ignore[return-value]
         from framework.services.repo_service import RepoService
         return RepoService()
 

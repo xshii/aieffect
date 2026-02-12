@@ -1,0 +1,57 @@
+# Pylint 配置文件
+# 用于代码质量检查
+
+[MASTER]
+# 忽略的文件或目录
+ignore=.git,__pycache__,.venv,venv,testdata
+
+[MESSAGES CONTROL]
+# 禁用某些检查（根据项目需求调整）
+disable=
+    import-outside-toplevel,  # 允许在函数内导入（用于延迟导入）
+    missing-module-docstring,  # 模块级docstring可选
+    too-few-public-methods,    # 某些类可能只有1个方法（如配置类）
+    import-error                # Pylint可能检测不到某些动态导入
+
+[FORMAT]
+# 最大行长度
+max-line-length=120
+
+# 最大模块行数
+max-module-lines=1000
+
+[DESIGN]
+# 函数/方法的最大行数
+max-statements=50
+
+# 函数/方法的最大参数数量
+max-args=5
+
+# 函数/方法的最大局部变量数量
+max-locals=15
+
+# 函数/方法的最大返回语句数量
+max-returns=6
+
+# 函数/方法的最大分支数量
+max-branches=12
+
+# 类的最大属性数量
+max-attributes=7
+
+# 类的最大公共方法数量
+max-public-methods=20
+
+[BASIC]
+# 好的变量名模式
+good-names=i,j,k,ex,Run,_,id,db,ok,fd,r,s,f,e
+
+# 变量名的正则表达式
+variable-rgx=[a-z_][a-z0-9_]{1,30}$
+
+[REPORTS]
+# 输出完整报告
+reports=yes
+
+# 评分显示
+score=yes

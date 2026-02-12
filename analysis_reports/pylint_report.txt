@@ -1,0 +1,426 @@
+************* Module framework.cli
+framework/cli.py:1:0: C0302: Too many lines in module (1062/1000) (too-many-lines)
+framework/cli.py:38:0: R0913: Too many arguments (7/5) (too-many-arguments)
+framework/cli.py:38:0: R0917: Too many positional arguments (7/5) (too-many-positional-arguments)
+framework/cli.py:45:8: C0103: Variable name "p" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:47:15: C0103: Variable name "v" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:90:8: C0103: Variable name "p" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:128:8: C0103: Variable name "v" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:213:8: C0103: Variable name "c" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:233:4: W0621: Redefining name 'CaseManager' from outer scope (line 8) (redefined-outer-name)
+framework/cli.py:233:4: W0404: Reimport 'CaseManager' (imported line 8) (reimported)
+framework/cli.py:389:8: C0103: Variable name "d" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:407:12: C0103: Variable name "t" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:501:8: C0103: Variable name "w" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:633:11: C0103: Variable name "v" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:674:8: C0103: Variable name "p" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:676:15: C0103: Variable name "v" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:716:0: R0913: Too many arguments (6/5) (too-many-arguments)
+framework/cli.py:716:0: R0917: Too many positional arguments (6/5) (too-many-positional-arguments)
+framework/cli.py:774:0: R0913: Too many arguments (6/5) (too-many-arguments)
+framework/cli.py:774:0: R0917: Too many positional arguments (6/5) (too-many-positional-arguments)
+framework/cli.py:810:0: R0913: Too many arguments (6/5) (too-many-arguments)
+framework/cli.py:810:0: R0917: Too many positional arguments (6/5) (too-many-positional-arguments)
+framework/cli.py:859:8: C0103: Variable name "b" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:872:0: R0913: Too many arguments (6/5) (too-many-arguments)
+framework/cli.py:872:0: R0917: Too many positional arguments (6/5) (too-many-positional-arguments)
+framework/cli.py:956:8: C0103: Variable name "d" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/cli.py:1038:4: W0621: Redefining name 'report' from outer scope (line 62) (redefined-outer-name)
+framework/cli.py:1042:30: W0621: Redefining name 'report' from outer scope (line 62) (redefined-outer-name)
+************* Module framework.web.app
+framework/web/app.py:56:8: C0103: Variable name "n" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/web/app.py:73:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:78:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:78:29: W0613: Unused argument 'exc' (unused-argument)
+framework/web/app.py:84:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:94:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:111:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:125:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:156:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:166:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:175:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:193:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:203:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:216:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:222:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:233:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:242:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:250:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:261:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:267:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:280:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:308:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:314:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:324:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:338:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:356:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:366:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:374:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:388:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/app.py:422:0: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.web.blueprints.repos_bp
+framework/web/blueprints/repos_bp.py:18:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/repos_bp.py:23:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/repos_bp.py:31:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/repos_bp.py:56:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/repos_bp.py:63:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/repos_bp.py:73:0: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.web.blueprints.builds_bp
+framework/web/blueprints/builds_bp.py:20:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/builds_bp.py:25:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/builds_bp.py:33:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/builds_bp.py:51:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/builds_bp.py:58:0: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.web.blueprints.envs_bp
+framework/web/blueprints/envs_bp.py:18:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:23:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:28:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:33:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:55:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:86:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:93:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:100:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:118:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:123:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:133:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:143:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/envs_bp.py:153:0: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.web.blueprints.stimuli_bp
+framework/web/blueprints/stimuli_bp.py:20:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:25:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:33:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:60:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:67:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:79:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:94:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:99:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:119:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:133:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:138:0: C0116: Missing function or method docstring (missing-function-docstring)
+framework/web/blueprints/stimuli_bp.py:158:0: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.utils.yaml_io
+framework/utils/yaml_io.py:36:4: C0103: Variable name "p" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/utils/yaml_io.py:45:4: C0103: Variable name "p" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+************* Module framework.services.container
+framework/services/container.py:39:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/container.py:46:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/container.py:53:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/container.py:60:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/container.py:67:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/container.py:74:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/container.py:83:0: C0103: Constant name "_global" doesn't conform to UPPER_CASE naming style (invalid-name)
+framework/services/container.py:89:4: W0603: Using the global statement (global-statement)
+framework/services/container.py:100:4: W0603: Using the global statement (global-statement)
+************* Module framework.services.execution_orchestrator
+framework/services/execution_orchestrator.py:38:0: R0902: Too many instance attributes (13/7) (too-many-instance-attributes)
+framework/services/execution_orchestrator.py:82:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/execution_orchestrator.py:92:4: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.services.case_service
+framework/services/case_service.py:24:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/case_service.py:30:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/case_service.py:35:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/case_service.py:41:4: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.services.repo_service
+framework/services/repo_service.py:101:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/repo_service.py:104:4: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.services.env_service
+framework/services/env_service.py:294:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/env_service.py:310:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/env_service.py:313:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/env_service.py:349:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/env_service.py:374:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/env_service.py:377:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/env_service.py:387:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/env_service.py:438:12: C0103: Variable name "h" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/services/env_service.py:441:12: C0103: Variable name "h" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/services/env_service.py:459:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/env_service.py:462:4: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.services.stimulus_service
+framework/services/stimulus_service.py:23:0: C0413: Import "from framework.core.exceptions import CaseNotFoundError, ValidationError" should be placed at the top of the module (wrong-import-position)
+framework/services/stimulus_service.py:24:0: C0413: Import "from framework.core.models import RESULT_STIMULUS_API, RESULT_STIMULUS_BINARY, TRIGGER_API, TRIGGER_BINARY, RepoSpec, ResultStimulusArtifact, ResultStimulusSpec, StimulusArtifact, StimulusSpec, TriggerResult, TriggerSpec" should be placed at the top of the module (wrong-import-position)
+framework/services/stimulus_service.py:37:0: C0413: Import "from framework.core.registry import YamlRegistry" should be placed at the top of the module (wrong-import-position)
+framework/services/stimulus_service.py:125:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/stimulus_service.py:128:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/stimulus_service.py:247:53: W0613: Unused argument 'dest' (unused-argument)
+framework/services/stimulus_service.py:530:12: C0103: Variable name "p" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/services/stimulus_service.py:583:8: C0103: Variable name "h" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+************* Module framework.services.result_service
+framework/services/result_service.py:41:4: R0913: Too many arguments (8/5) (too-many-arguments)
+framework/services/result_service.py:59:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/result_service.py:71:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/result_service.py:194:4: R0914: Too many local variables (16/15) (too-many-locals)
+************* Module framework.services.build_service
+framework/services/build_service.py:22:0: C0413: Import "from framework.core.exceptions import CaseNotFoundError, ValidationError" should be placed at the top of the module (wrong-import-position)
+framework/services/build_service.py:23:0: C0413: Import "from framework.core.models import BuildResult, BuildSpec" should be placed at the top of the module (wrong-import-position)
+framework/services/build_service.py:24:0: C0413: Import "from framework.core.registry import YamlRegistry" should be placed at the top of the module (wrong-import-position)
+framework/services/build_service.py:25:0: C0413: Import "from framework.utils.shell import run_cmd" should be placed at the top of the module (wrong-import-position)
+framework/services/build_service.py:88:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/build_service.py:91:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/build_service.py:102:4: R0913: Too many arguments (6/5) (too-many-arguments)
+framework/services/build_service.py:200:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/build_service.py:204:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/services/build_service.py:216:4: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.core.pipeline
+framework/core/pipeline.py:53:4: R0913: Too many arguments (6/5) (too-many-arguments)
+************* Module framework.core.case_manager
+framework/core/case_manager.py:34:4: R0913: Too many arguments (7/5) (too-many-arguments)
+framework/core/case_manager.py:63:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/core/case_manager.py:90:4: C0116: Missing function or method docstring (missing-function-docstring)
+************* Module framework.core.dep_manager
+framework/core/dep_manager.py:53:0: R0902: Too many instance attributes (11/7) (too-many-instance-attributes)
+framework/core/dep_manager.py:350:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/core/dep_manager.py:352:12: C0103: Variable name "p" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/core/dep_manager.py:373:15: C0103: Variable name "v" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+************* Module framework.core.config
+framework/core/config.py:20:0: R0902: Too many instance attributes (18/7) (too-many-instance-attributes)
+framework/core/config.py:57:33: E1101: Class 'Config' has no '__dataclass_fields__' member (no-member)
+framework/core/config.py:64:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/core/config.py:70:0: C0103: Constant name "_current" doesn't conform to UPPER_CASE naming style (invalid-name)
+framework/core/config.py:75:4: W0603: Using the global statement (global-statement)
+framework/core/config.py:86:4: W0603: Using the global statement (global-statement)
+************* Module framework.core.history
+framework/core/history.py:44:4: R0913: Too many arguments (8/5) (too-many-arguments)
+framework/core/history.py:116:16: C0103: Variable name "c" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+************* Module framework.core.log_checker
+framework/core/log_checker.py:49:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/core/log_checker.py:64:8: C0103: Variable name "p" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/core/log_checker.py:123:8: C0103: Variable name "p" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+************* Module framework.core.reporter
+framework/core/reporter.py:51:0: C0115: Missing class docstring (missing-class-docstring)
+framework/core/reporter.py:61:0: C0115: Missing class docstring (missing-class-docstring)
+framework/core/reporter.py:104:0: C0115: Missing class docstring (missing-class-docstring)
+************* Module framework.core.runner
+framework/core/runner.py:83:16: C0103: Variable name "c" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/core/runner.py:86:16: C0103: Variable name "c" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/core/runner.py:90:27: C0103: Variable name "v" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/core/runner.py:95:4: R0913: Too many arguments (6/5) (too-many-arguments)
+framework/core/runner.py:136:4: R0913: Too many arguments (6/5) (too-many-arguments)
+************* Module framework.core.models
+framework/core/models.py:79:0: R0902: Too many instance attributes (8/7) (too-many-instance-attributes)
+framework/core/models.py:113:4: C0116: Missing function or method docstring (missing-function-docstring)
+framework/core/models.py:123:0: R0902: Too many instance attributes (12/7) (too-many-instance-attributes)
+framework/core/models.py:209:0: R0902: Too many instance attributes (9/7) (too-many-instance-attributes)
+framework/core/models.py:228:0: R0902: Too many instance attributes (10/7) (too-many-instance-attributes)
+framework/core/models.py:248:0: R0902: Too many instance attributes (8/7) (too-many-instance-attributes)
+framework/core/models.py:270:0: R0902: Too many instance attributes (9/7) (too-many-instance-attributes)
+************* Module framework.core.snapshot
+framework/core/snapshot.py:104:8: C0103: Variable name "a" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+framework/core/snapshot.py:105:8: C0103: Variable name "b" doesn't conform to '[a-z_][a-z0-9_]{1,30}$' pattern (invalid-name)
+************* Module framework.core.registry
+framework/core/registry.py:1:0: R0801: Similar lines in 2 files
+==framework.services.env_service:[354:360]
+==framework.web.blueprints.envs_bp:[62:68]
+        ti = tinfo if isinstance(tinfo, dict) else {}
+        tools[tname] = ToolSpec(
+            name=tname, version=ti.get("version", ""),
+            install_path=ti.get("install_path", ""),
+            env_vars=ti.get("env_vars", {}),
+        ) (duplicate-code)
+
+
+Report
+======
+3586 statements analysed.
+
+Statistics by type
+------------------
+
++---------+-------+-----------+-----------+------------+---------+
+|type     |number |old number |difference |%documented |%badname |
++=========+=======+===========+===========+============+=========+
+|module   |41     |41         |=          |100.00      |0.00     |
++---------+-------+-----------+-----------+------------+---------+
+|class    |70     |70         |=          |95.71       |0.00     |
++---------+-------+-----------+-----------+------------+---------+
+|method   |233    |NC         |NC         |83.69       |0.00     |
++---------+-------+-----------+-----------+------------+---------+
+|function |156    |NC         |NC         |58.97       |0.00     |
++---------+-------+-----------+-----------+------------+---------+
+
+
+
+External dependencies
+---------------------
+::
+
+    framework 
+      \-core 
+      | \-case_manager (framework.services.case_service,framework.web.app)
+      | \-config (framework.services.build_service,framework.services.env_service,framework.services.repo_service,framework.services.result_service,framework.services.stimulus_service,framework.web.app)
+      | \-dep_manager (framework.services.repo_service)
+      | \-exceptions (framework.services.build_service,framework.services.case_service,framework.services.env_service,framework.services.repo_service,framework.services.stimulus_service,framework.web.blueprints.builds_bp,framework.web.blueprints.envs_bp,framework.web.blueprints.stimuli_bp)
+      | \-history (framework.services.result_service,framework.web.app)
+      | \-log_checker (framework.web.app)
+      | \-models (framework.services.build_service,framework.services.env_service,framework.services.execution_orchestrator,framework.services.repo_service,framework.services.result_service,framework.services.run_service,framework.services.stimulus_service,framework.web.app,framework.web.blueprints.builds_bp,framework.web.blueprints.envs_bp,framework.web.blueprints.repos_bp,framework.web.blueprints.stimuli_bp)
+      | \-pipeline (framework.services.run_service)
+      | \-registry (framework.services.build_service,framework.services.env_service,framework.services.repo_service,framework.services.stimulus_service)
+      | \-reporter (framework.services.result_service)
+      | \-resource (framework.web.app)
+      | \-runner (framework.services.run_service)
+      | \-snapshot (framework.web.app)
+      | \-storage (framework.services.stimulus_service,framework.web.app)
+      \-services 
+      | \-container (framework.web.blueprints.builds_bp,framework.web.blueprints.envs_bp,framework.web.blueprints.repos_bp,framework.web.blueprints.stimuli_bp)
+      | \-execution_orchestrator (framework.web.app)
+      | \-result_service (framework.web.app)
+      \-utils 
+        \-net (framework.core.dep_manager,framework.core.resource,framework.core.storage,framework.services.repo_service,framework.services.result_service,framework.services.stimulus_service)
+        \-shell (framework.services.build_service,framework.services.repo_service)
+        \-yaml_io (framework.core.config,framework.core.dep_manager,framework.core.history,framework.core.log_checker,framework.core.registry,framework.core.runner,framework.core.snapshot)
+    yaml (framework.utils.yaml_io,framework.web.app)
+
+
+
+7245 lines have been analyzed
+
+Raw metrics
+-----------
+
++----------+-------+------+---------+-----------+
+|type      |number |%     |previous |difference |
++==========+=======+======+=========+===========+
+|code      |4967   |68.56 |4967     |=          |
++----------+-------+------+---------+-----------+
+|docstring |909    |12.55 |909      |=          |
++----------+-------+------+---------+-----------+
+|comment   |197    |2.72  |197      |=          |
++----------+-------+------+---------+-----------+
+|empty     |1172   |16.18 |1172     |=          |
++----------+-------+------+---------+-----------+
+
+
+
+Duplication
+-----------
+
++-------------------------+------+---------+-----------+
+|                         |now   |previous |difference |
++=========================+======+=========+===========+
+|nb duplicated lines      |0     |0        |0          |
++-------------------------+------+---------+-----------+
+|percent duplicated lines |0.000 |0.000    |=          |
++-------------------------+------+---------+-----------+
+
+
+
+Messages by category
+--------------------
+
++-----------+-------+---------+-----------+
+|type       |number |previous |difference |
++===========+=======+=========+===========+
+|convention |145    |102      |102        |
++-----------+-------+---------+-----------+
+|refactor   |28     |0        |0          |
++-----------+-------+---------+-----------+
+|warning    |10     |0        |0          |
++-----------+-------+---------+-----------+
+|error      |1      |0        |0          |
++-----------+-------+---------+-----------+
+
+
+
+% errors / warnings by module
+-----------------------------
+
++------------------------------------------+-------+--------+---------+-----------+
+|module                                    |error  |warning |refactor |convention |
++==========================================+=======+========+=========+===========+
+|framework.core.config                     |100.00 |20.00   |3.57     |1.38       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.cli                             |0.00   |40.00   |35.71    |9.66       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.services.container              |0.00   |20.00   |0.00     |4.83       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.web.app                         |0.00   |10.00   |0.00     |20.00      |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.services.stimulus_service       |0.00   |10.00   |0.00     |4.83       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.models                     |0.00   |0.00    |21.43    |0.69       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.runner                     |0.00   |0.00    |7.14     |2.07       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.services.result_service         |0.00   |0.00    |7.14     |1.38       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.services.build_service          |0.00   |0.00    |3.57     |6.21       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.dep_manager                |0.00   |0.00    |3.57     |2.07       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.services.execution_orchestrator |0.00   |0.00    |3.57     |1.38       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.case_manager               |0.00   |0.00    |3.57     |1.38       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.history                    |0.00   |0.00    |3.57     |0.69       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.registry                   |0.00   |0.00    |3.57     |0.00       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.pipeline                   |0.00   |0.00    |3.57     |0.00       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.web.blueprints.envs_bp          |0.00   |0.00    |0.00     |8.97       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.web.blueprints.stimuli_bp       |0.00   |0.00    |0.00     |8.28       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.services.env_service            |0.00   |0.00    |0.00     |7.59       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.web.blueprints.repos_bp         |0.00   |0.00    |0.00     |4.14       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.web.blueprints.builds_bp        |0.00   |0.00    |0.00     |3.45       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.services.case_service           |0.00   |0.00    |0.00     |2.76       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.reporter                   |0.00   |0.00    |0.00     |2.07       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.log_checker                |0.00   |0.00    |0.00     |2.07       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.utils.yaml_io                   |0.00   |0.00    |0.00     |1.38       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.services.repo_service           |0.00   |0.00    |0.00     |1.38       |
++------------------------------------------+-------+--------+---------+-----------+
+|framework.core.snapshot                   |0.00   |0.00    |0.00     |1.38       |
++------------------------------------------+-------+--------+---------+-----------+
+
+
+
+Messages
+--------
+
++------------------------------+------------+
+|message id                    |occurrences |
++==============================+============+
+|missing-function-docstring    |102         |
++------------------------------+------------+
+|invalid-name                  |32          |
++------------------------------+------------+
+|too-many-arguments            |12          |
++------------------------------+------------+
+|too-many-instance-attributes  |9           |
++------------------------------+------------+
+|wrong-import-position         |7           |
++------------------------------+------------+
+|too-many-positional-arguments |5           |
++------------------------------+------------+
+|global-statement              |4           |
++------------------------------+------------+
+|redefined-outer-name          |3           |
++------------------------------+------------+
+|missing-class-docstring       |3           |
++------------------------------+------------+
+|unused-argument               |2           |
++------------------------------+------------+
+|too-many-locals               |1           |
++------------------------------+------------+
+|too-many-lines                |1           |
++------------------------------+------------+
+|reimported                    |1           |
++------------------------------+------------+
+|no-member                     |1           |
++------------------------------+------------+
+|duplicate-code                |1           |
++------------------------------+------------+
+
+
+
+
+------------------------------------------------------------------
+Your code has been rated at 9.48/10 (previous run: 9.72/10, -0.24)
+

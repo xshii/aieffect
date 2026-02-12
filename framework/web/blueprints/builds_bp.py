@@ -4,23 +4,25 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
+
+from framework.core.exceptions import AIEffectError
 
 builds_bp = Blueprint("builds", __name__, url_prefix="/api/builds")
 
 
-def _build_svc():
+def _build_svc():  # type: ignore[no-untyped-def]
     from framework.services.container import get_container
     return get_container().build
 
 
 @builds_bp.route("", methods=["GET"])
-def list_all():
+def list_all() -> Response:
     return jsonify(builds=_build_svc().list_all())
 
 
 @builds_bp.route("/<name>", methods=["GET"])
-def get(name: str):
+def get(name: str) -> tuple[Response, int] | Response:
     spec = _build_svc().get(name)
     if spec is None:
         return jsonify(error="构建配置不存在"), 404
@@ -28,7 +30,7 @@ def get(name: str):
 
 
 @builds_bp.route("", methods=["POST"])
-def add():
+def add() -> Response:
     from framework.core.models import BuildSpec
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
@@ -46,14 +48,14 @@ def add():
 
 
 @builds_bp.route("/<name>", methods=["DELETE"])
-def delete(name: str):
+def delete(name: str) -> tuple[Response, int] | Response:
     if _build_svc().remove(name):
         return jsonify(message=f"构建已删除: {name}")
     return jsonify(error="构建配置不存在"), 404
 
 
 @builds_bp.route("/<name>/run", methods=["POST"])
-def run(name: str):
+def run(name: str) -> tuple[Response, int] | Response:
     body = request.get_json(silent=True) or {}
     try:
         result = _build_svc().build(
@@ -68,5 +70,5 @@ def run(name: str):
             message=result.message, cached=result.cached,
             repo_ref=result.repo_ref,
         )
-    except Exception as e:
+    except AIEffectError as e:
         return jsonify(error=str(e)), 400

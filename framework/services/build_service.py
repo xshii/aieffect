@@ -14,7 +14,10 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from framework.services.repo_service import RepoService
 
 from framework.core.exceptions import CaseNotFoundError, ValidationError
 from framework.core.models import BuildResult, BuildSpec
@@ -45,9 +48,9 @@ class BuildService(YamlRegistry):
         self._build_cache: dict[tuple[str, str], BuildResult] = {}
         self._repo_service = repo_service
 
-    def _get_repo_service(self):
+    def _get_repo_service(self) -> RepoService:
         if self._repo_service is not None:
-            return self._repo_service
+            return self._repo_service  # type: ignore[return-value]
         from framework.services.repo_service import RepoService
         return RepoService()
 
@@ -122,17 +125,19 @@ class BuildService(YamlRegistry):
         return self._execute_build(spec, work_dir, env_vars, effective_ref)
 
     def _resolve_ref(self, spec: BuildSpec, repo_ref: str) -> str:
+        """解析构建使用的代码分支，优先使用传入的ref，否则使用仓库默认ref"""
         if repo_ref:
             return repo_ref
         if spec.repo_name:
             repo_spec = self._get_repo_service().get(spec.repo_name)
-            if repo_spec:
-                return repo_spec.ref
+            if repo_spec is not None:
+                return str(repo_spec.ref)
         return ""
 
     def _check_cache(
         self, spec: BuildSpec, ref: str, force: bool,
     ) -> BuildResult | None:
+        """检查构建缓存，返回缓存结果或None（未命中或force=True）"""
         cache_key = (spec.name, ref)
         if force or cache_key not in self._build_cache:
             return None
@@ -148,13 +153,14 @@ class BuildService(YamlRegistry):
         )
 
     def _resolve_work_dir(self, spec: BuildSpec, work_dir: str, repo_ref: str) -> str:
+        """解析构建工作目录，优先使用传入路径，否则自动checkout代码仓"""
         if work_dir:
             return work_dir
         if spec.repo_name:
             ws = self._get_repo_service().checkout(spec.repo_name, ref_override=repo_ref)
             if ws.status == "error":
                 return "ERROR:代码仓检出失败"
-            return ws.local_path
+            return str(ws.local_path)
         path = str(self.output_root / spec.name)
         Path(path).mkdir(parents=True, exist_ok=True)
         return path
@@ -163,6 +169,7 @@ class BuildService(YamlRegistry):
         self, spec: BuildSpec, work_dir: str,
         env_vars: dict[str, str] | None, effective_ref: str,
     ) -> BuildResult:
+        """执行实际的构建命令（setup → build），返回构建结果"""
         import os
         env = {**os.environ, **(env_vars or {})}
         start = time.monotonic()
