@@ -11,7 +11,8 @@
   7. teardown          — 清理回收
 
 环境优先于代码仓：环境决定代码仓检出位置。
-每个阶段由对应的 Service 驱动，Orchestrator 只负责编排。
+使用 ServiceContainer 统一依赖注入，避免跨服务裸构造。
+teardown 通过 try/finally 保证执行。
 """
 
 from __future__ import annotations
@@ -27,7 +28,8 @@ from framework.core.models import (
     StimulusArtifact,
     SuiteResult,
 )
-from framework.services.run_service import RunRequest, RunService
+from framework.services.container import ServiceContainer
+from framework.services.run_service import RunRequest
 
 logger = logging.getLogger(__name__)
 
@@ -40,25 +42,30 @@ class OrchestrationPlan:
     config_path: str = "configs/default.yml"
     parallel: int = 1
 
-    # 可选：要装配的环境（优先于代码仓）
     build_env_name: str = ""
     exe_env_name: str = ""
-    environment: str = ""  # 兼容旧字段
+    environment: str = ""
 
-    # 可选：要检出的代码仓
     repo_names: list[str] = field(default_factory=list)
     repo_ref_overrides: dict[str, str] = field(default_factory=dict)
-
-    # 可选：要执行的构建
     build_names: list[str] = field(default_factory=list)
-
-    # 可选：要获取的激励
     stimulus_names: list[str] = field(default_factory=list)
 
-    # 运行时参数
     params: dict[str, str] = field(default_factory=dict)
     snapshot_id: str = ""
     case_names: list[str] = field(default_factory=list)
+
+    def to_run_request(self) -> RunRequest:
+        """转换为 RunRequest（消除手动字段拷贝）"""
+        return RunRequest(
+            suite=self.suite,
+            config_path=self.config_path,
+            parallel=self.parallel,
+            environment=self.exe_env_name or self.environment,
+            params=self.params or None,
+            snapshot_id=self.snapshot_id,
+            case_names=self.case_names or None,
+        )
 
 
 @dataclass
@@ -77,33 +84,24 @@ class OrchestrationReport:
 
 
 class ExecutionOrchestrator:
-    """7 步执行编排器（环境优先）"""
+    """7 步执行编排器（环境优先，try/finally 保证 teardown）"""
+
+    def __init__(self, container: ServiceContainer | None = None) -> None:
+        self.c = container or ServiceContainer()
 
     def run(self, plan: OrchestrationPlan) -> OrchestrationReport:
-        """按 7 步流水线执行（环境 → 代码仓 → 构建 → 激励 → 执行 → 收集 → 清理）"""
         ctx = ExecutionContext(params=plan.params)
         report = OrchestrationReport(plan=plan, context=ctx)
 
-        # Step 1: 装配环境（最优先 — 环境决定代码仓检出位置）
-        self._step_provision_env(plan, ctx, report)
-
-        # Step 2: 检出代码仓
-        self._step_checkout(plan, ctx, report)
-
-        # Step 3: 构建
-        self._step_build(plan, ctx, report)
-
-        # Step 4: 获取激励
-        self._step_acquire_stimuli(plan, ctx, report)
-
-        # Step 5: 执行用例
-        self._step_execute(plan, ctx, report)
-
-        # Step 6: 收集结果
-        self._step_collect(plan, ctx, report)
-
-        # Step 7: 清理回收
-        self._step_teardown(ctx, report)
+        try:
+            self._step_provision_env(plan, ctx, report)
+            self._step_checkout(plan, ctx, report)
+            self._step_build(plan, ctx, report)
+            self._step_acquire_stimuli(plan, ctx, report)
+            self._step_execute(plan, report)
+            self._step_collect(plan, report)
+        finally:
+            self._step_teardown(ctx, report)
 
         return report
 
@@ -121,9 +119,7 @@ class ExecutionOrchestrator:
                 "detail": "未指定环境",
             })
             return
-        from framework.services.env_service import EnvService
-        svc = EnvService()
-        session = svc.apply(
+        session = self.c.env.apply(
             build_env_name=build_env, exe_env_name=exe_env,
         )
         ctx.env_session = session
@@ -145,15 +141,12 @@ class ExecutionOrchestrator:
         if not plan.repo_names:
             report.steps.append({
                 "step": "checkout", "status": "skipped",
-                "detail": "无代码仓",
             })
             return
-        from framework.services.repo_service import RepoService
-        svc = RepoService()
         workspaces: list[RepoWorkspace] = []
         for name in plan.repo_names:
             ref = plan.repo_ref_overrides.get(name, "")
-            ws = svc.checkout(name, ref_override=ref)
+            ws = self.c.repo.checkout(name, ref_override=ref)
             workspaces.append(ws)
         ctx.repos = workspaces
         statuses = {ws.spec.name: ws.status for ws in workspaces}
@@ -169,18 +162,15 @@ class ExecutionOrchestrator:
         if not plan.build_names:
             report.steps.append({
                 "step": "build", "status": "skipped",
-                "detail": "无构建任务",
             })
             return
-        from framework.services.build_service import BuildService
-        svc = BuildService()
         env_vars = (
             ctx.env_session.resolved_vars if ctx.env_session else None
         )
         results: list[BuildResult] = []
         for name in plan.build_names:
             ref = plan.repo_ref_overrides.get(name, "")
-            result = svc.build(name, env_vars=env_vars, repo_ref=ref)
+            result = self.c.build.build(name, env_vars=env_vars, repo_ref=ref)
             results.append(result)
         ctx.builds = results
         statuses = {r.spec.name: r.status for r in results}
@@ -196,14 +186,11 @@ class ExecutionOrchestrator:
         if not plan.stimulus_names:
             report.steps.append({
                 "step": "acquire_stimuli", "status": "skipped",
-                "detail": "无激励需求",
             })
             return
-        from framework.services.stimulus_service import StimulusService
-        svc = StimulusService()
         artifacts: list[StimulusArtifact] = []
         for name in plan.stimulus_names:
-            art = svc.acquire(name)
+            art = self.c.stimulus.acquire(name)
             artifacts.append(art)
         ctx.stimuli = artifacts
         statuses = {a.spec.name: a.status for a in artifacts}
@@ -214,22 +201,11 @@ class ExecutionOrchestrator:
         logger.info("[Step 4] 激励获取完成: %s", statuses)
 
     def _step_execute(
-        self, plan: OrchestrationPlan, ctx: ExecutionContext,
+        self, plan: OrchestrationPlan,
         report: OrchestrationReport,
     ) -> None:
-        """执行用例 — 复用 RunService"""
-        svc = RunService()
-        env_name = plan.exe_env_name or plan.environment
-        req = RunRequest(
-            suite=plan.suite,
-            config_path=plan.config_path,
-            parallel=plan.parallel,
-            environment=env_name,
-            params=plan.params or None,
-            snapshot_id=plan.snapshot_id,
-            case_names=plan.case_names or None,
-        )
-        result = svc.execute(req)
+        req = plan.to_run_request()
+        result = self.c.run.execute(req)
         report.suite_result = result
         report.steps.append({
             "step": "execute", "status": "done",
@@ -242,20 +218,16 @@ class ExecutionOrchestrator:
         )
 
     def _step_collect(
-        self, plan: OrchestrationPlan, ctx: ExecutionContext,
+        self, plan: OrchestrationPlan,
         report: OrchestrationReport,
     ) -> None:
-        """收集并持久化结果"""
         if report.suite_result is None:
             report.steps.append({
                 "step": "collect", "status": "skipped",
-                "detail": "无执行结果",
             })
             return
-        from framework.services.result_service import ResultService
-        svc = ResultService()
         env_name = plan.exe_env_name or plan.environment
-        run_id = svc.save(
+        run_id = self.c.result.save(
             report.suite_result,
             suite=plan.suite,
             environment=env_name,
@@ -273,10 +245,7 @@ class ExecutionOrchestrator:
     def _step_teardown(
         self, ctx: ExecutionContext, report: OrchestrationReport,
     ) -> None:
-        """清理环境会话"""
         if ctx.env_session and ctx.env_session.status == "applied":
-            from framework.services.env_service import EnvService
-            svc = EnvService()
-            svc.release(ctx.env_session)
+            self.c.env.release(ctx.env_session)
         report.steps.append({"step": "teardown", "status": "done"})
         logger.info("[Step 7] 清理完成")

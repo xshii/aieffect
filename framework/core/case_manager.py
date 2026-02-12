@@ -12,31 +12,28 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from framework.utils.yaml_io import load_yaml, save_yaml
+from framework.core.registry import YamlRegistry
 
 logger = logging.getLogger(__name__)
 
 
-class CaseManager:
+class CaseManager(YamlRegistry):
     """用例表单管理器"""
+
+    section_key = "cases"
 
     def __init__(self, cases_file: str = "") -> None:
         if not cases_file:
             from framework.core.config import get_config
             cases_file = get_config().cases_file
-        self.cases_file = Path(cases_file)
-        self.data = load_yaml(self.cases_file)
+        super().__init__(cases_file)
 
     def _cases(self) -> dict[str, dict[str, Any]]:
-        result: dict[str, dict[str, Any]] = self.data.setdefault("cases", {})
-        return result
+        return self._section()
 
     def _environments(self) -> dict[str, dict[str, Any]]:
-        result: dict[str, dict[str, Any]] = self.data.setdefault("environments", {})
+        result: dict[str, dict[str, Any]] = self._data.setdefault("environments", {})
         return result
-
-    def _save(self) -> None:
-        save_yaml(self.cases_file, self.data)
 
     # ---- 环境管理 ----
 

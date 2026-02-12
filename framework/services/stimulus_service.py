@@ -31,13 +31,15 @@ from framework.core.models import (
     TriggerResult,
     TriggerSpec,
 )
-from framework.utils.yaml_io import load_yaml, save_yaml
+from framework.core.registry import YamlRegistry
 
 logger = logging.getLogger(__name__)
 
 
-class StimulusService:
+class StimulusService(YamlRegistry):
     """激励全生命周期管理"""
+
+    section_key = "stimuli"
 
     def __init__(self, registry_file: str = "", artifact_dir: str = "") -> None:
         if not registry_file:
@@ -46,26 +48,17 @@ class StimulusService:
         if not artifact_dir:
             from framework.core.config import get_config
             artifact_dir = str(Path(get_config().workspace_dir) / "stimuli")
-        self.registry_file = Path(registry_file)
+        super().__init__(registry_file)
         self.artifact_dir = Path(artifact_dir)
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
-        self._data: dict[str, Any] = load_yaml(self.registry_file)
 
-    def _sources(self) -> dict[str, dict[str, Any]]:
-        result: dict[str, dict[str, Any]] = self._data.setdefault("stimuli", {})
-        return result
-
-    def _result_stimuli(self) -> dict[str, dict[str, Any]]:
+    def _result_stimuli_section(self) -> dict[str, dict[str, Any]]:
         result: dict[str, dict[str, Any]] = self._data.setdefault("result_stimuli", {})
         return result
 
-    def _triggers(self) -> dict[str, dict[str, Any]]:
+    def _triggers_section(self) -> dict[str, dict[str, Any]]:
         result: dict[str, dict[str, Any]] = self._data.setdefault("triggers", {})
         return result
-
-    def _save(self) -> None:
-        self.registry_file.parent.mkdir(parents=True, exist_ok=True)
-        save_yaml(self.registry_file, self._data)
 
     # =====================================================================
     # 1. 激励管理 — CRUD
@@ -92,14 +85,13 @@ class StimulusService:
                 "name": spec.repo.name, "url": spec.repo.url,
                 "ref": spec.repo.ref, "path": spec.repo.path,
             }
-        self._sources()[spec.name] = entry
-        self._save()
+        self._put(spec.name, entry)
         logger.info("激励已注册: %s (type=%s)", spec.name, spec.source_type)
         return entry
 
     def get(self, name: str) -> StimulusSpec | None:
         """获取已注册激励源定义"""
-        entry = self._sources().get(name)
+        entry = self._get_raw(name)
         if entry is None:
             return None
         repo = None
@@ -122,16 +114,11 @@ class StimulusService:
         )
 
     def list_all(self) -> list[dict[str, Any]]:
-        """列出所有已注册激励源"""
-        return [{"name": k, **v} for k, v in self._sources().items()]
+        return self._list_raw()
 
     def remove(self, name: str) -> bool:
-        """移除激励注册"""
-        sources = self._sources()
-        if name not in sources:
+        if not self._remove(name):
             return False
-        del sources[name]
-        self._save()
         logger.info("激励已移除: %s", name)
         return True
 
@@ -316,14 +303,14 @@ class StimulusService:
             "parser_cmd": spec.parser_cmd,
             "description": spec.description,
         }
-        self._result_stimuli()[spec.name] = entry
+        self._result_stimuli_section()[spec.name] = entry
         self._save()
         logger.info("结果激励已注册: %s (type=%s)", spec.name, spec.source_type)
         return entry
 
     def get_result_stimulus(self, name: str) -> ResultStimulusSpec | None:
         """获取结果激励定义"""
-        entry = self._result_stimuli().get(name)
+        entry = self._result_stimuli_section().get(name)
         if entry is None:
             return None
         return ResultStimulusSpec(
@@ -338,11 +325,11 @@ class StimulusService:
 
     def list_result_stimuli(self) -> list[dict[str, Any]]:
         """列出所有结果激励"""
-        return [{"name": k, **v} for k, v in self._result_stimuli().items()]
+        return [{"name": k, **v} for k, v in self._result_stimuli_section().items()]
 
     def remove_result_stimulus(self, name: str) -> bool:
         """移除结果激励"""
-        rs = self._result_stimuli()
+        rs = self._result_stimuli_section()
         if name not in rs:
             return False
         del rs[name]
@@ -444,14 +431,14 @@ class StimulusService:
             "stimulus_name": spec.stimulus_name,
             "description": spec.description,
         }
-        self._triggers()[spec.name] = entry
+        self._triggers_section()[spec.name] = entry
         self._save()
         logger.info("触发器已注册: %s (type=%s)", spec.name, spec.trigger_type)
         return entry
 
     def get_trigger(self, name: str) -> TriggerSpec | None:
         """获取触发器定义"""
-        entry = self._triggers().get(name)
+        entry = self._triggers_section().get(name)
         if entry is None:
             return None
         return TriggerSpec(
@@ -466,11 +453,11 @@ class StimulusService:
 
     def list_triggers(self) -> list[dict[str, Any]]:
         """列出所有触发器"""
-        return [{"name": k, **v} for k, v in self._triggers().items()]
+        return [{"name": k, **v} for k, v in self._triggers_section().items()]
 
     def remove_trigger(self, name: str) -> bool:
         """移除触发器"""
-        trigs = self._triggers()
+        trigs = self._triggers_section()
         if name not in trigs:
             return False
         del trigs[name]

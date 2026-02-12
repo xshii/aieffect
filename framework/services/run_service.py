@@ -30,7 +30,11 @@ class RunRequest:
 
 
 class RunService:
-    """测试执行服务"""
+    """测试执行服务
+
+    只负责执行用例并返回 SuiteResult，
+    结果持久化由上层（Orchestrator 或 CLI）决定。
+    """
 
     def __init__(
         self,
@@ -39,11 +43,11 @@ class RunService:
         self.pipeline = pipeline or ResultPipeline()
 
     def execute(self, req: RunRequest) -> SuiteResult:
-        """执行套件并完成后处理，返回结果"""
+        """执行套件并返回结果（不自动持久化）"""
         runner = CaseRunner(
             config_path=req.config_path, parallel=req.parallel,
         )
-        result = runner.run_suite(
+        return runner.run_suite(
             req.suite,
             environment=req.environment,
             params=req.params,
@@ -51,6 +55,9 @@ class RunService:
             case_names=req.case_names,
         )
 
+    def execute_and_persist(self, req: RunRequest) -> SuiteResult:
+        """执行套件 + 后处理持久化（独立调用入口）"""
+        result = self.execute(req)
         self.pipeline.process(
             result,
             suite=req.suite,
