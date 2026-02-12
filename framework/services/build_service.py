@@ -34,7 +34,7 @@ class BuildService(YamlRegistry):
 
     def __init__(
         self, registry_file: str = "", output_root: str = "",
-        repo_service: Any = None,
+        repo_service: RepoService | None = None,
     ) -> None:
         if not registry_file:
             from framework.core.config import get_config
@@ -50,7 +50,7 @@ class BuildService(YamlRegistry):
 
     def _get_repo_service(self) -> RepoService:
         if self._repo_service is not None:
-            return self._repo_service  # type: ignore[return-value]
+            return self._repo_service
         from framework.services.repo_service import RepoService
         return RepoService()
 

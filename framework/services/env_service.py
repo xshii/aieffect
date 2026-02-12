@@ -21,6 +21,7 @@ import logging
 import os
 import shlex
 import subprocess
+import tempfile
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -117,7 +118,9 @@ class RemoteBuildHandler(BaseEnvHandler):
             session.status = ENV_INVALID
             session.message = "远端构建环境缺少 host"
             return session
-        work = spec.work_dir or f"/tmp/aieffect/{session.name}"
+        work = spec.work_dir or os.path.join(
+            tempfile.gettempdir(), "aieffect", session.name,
+        )
         session.work_dir = work
         session.status = ENV_APPLIED
         session.resolved_vars.update(spec.variables)
@@ -403,34 +406,51 @@ class EnvService(YamlRegistry):
         session = EnvSession(name=name, session_id=session_id)
 
         if build_env_name:
-            spec = self.get_build_env(build_env_name)
-            if spec is None:
-                raise CaseNotFoundError(f"构建环境不存在: {build_env_name}")
-            session.build_env = spec
-            handler = _get_build_handler(spec.build_env_type)
-            session = handler.apply(session)
+            session = self._apply_build_env(session, build_env_name)
             if session.status != ENV_APPLIED:
                 return session
 
         if exe_env_name:
-            exe_spec = self.get_exe_env(exe_env_name)
-            if exe_spec is None:
-                raise CaseNotFoundError(f"执行环境不存在: {exe_env_name}")
-            session.exe_env = exe_spec
-            if exe_spec.exe_env_type == EXE_ENV_SAME_AS_BUILD and not session.build_env:
-                if exe_spec.build_env_name:
-                    bspec = self.get_build_env(exe_spec.build_env_name)
-                    if bspec:
-                        session.build_env = bspec
-                        bh = _get_build_handler(bspec.build_env_type)
-                        session = bh.apply(session)
-            handler = _get_exe_handler(exe_spec.exe_env_type)
-            session = handler.apply(session)
+            session = self._apply_exe_env(session, exe_env_name)
 
         self._sessions[session_id] = session
         logger.info("环境会话已创建: id=%s, name=%s, status=%s",
                      session_id, name, session.status)
         return session
+
+    def _apply_build_env(
+        self, session: EnvSession, build_env_name: str,
+    ) -> EnvSession:
+        spec = self.get_build_env(build_env_name)
+        if spec is None:
+            raise CaseNotFoundError(f"构建环境不存在: {build_env_name}")
+        session.build_env = spec
+        handler = _get_build_handler(spec.build_env_type)
+        return handler.apply(session)
+
+    def _apply_exe_env(
+        self, session: EnvSession, exe_env_name: str,
+    ) -> EnvSession:
+        exe_spec = self.get_exe_env(exe_env_name)
+        if exe_spec is None:
+            raise CaseNotFoundError(f"执行环境不存在: {exe_env_name}")
+        session.exe_env = exe_spec
+        if exe_spec.exe_env_type == EXE_ENV_SAME_AS_BUILD and not session.build_env:
+            session = self._auto_apply_linked_build(session, exe_spec)
+        handler = _get_exe_handler(exe_spec.exe_env_type)
+        return handler.apply(session)
+
+    def _auto_apply_linked_build(
+        self, session: EnvSession, exe_spec: ExeEnvSpec,
+    ) -> EnvSession:
+        if not exe_spec.build_env_name:
+            return session
+        bspec = self.get_build_env(exe_spec.build_env_name)
+        if bspec is None:
+            return session
+        session.build_env = bspec
+        bh = _get_build_handler(bspec.build_env_type)
+        return bh.apply(session)
 
     def release(self, session: EnvSession) -> EnvSession:
         """释放环境"""

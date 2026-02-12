@@ -110,7 +110,21 @@ class HistoryManager:
 
     def case_summary(self, case_name: str) -> dict:
         """获取单个用例的历史执行汇总"""
-        records = self._load()
+        runs = self._collect_case_runs(self._load(), case_name)
+        counts = self._count_statuses(runs)
+        total = len(runs)
+        pass_rate = (counts["passed"] / total * 100) if total > 0 else 0
+
+        return {
+            "case_name": case_name,
+            "total_runs": total,
+            **counts,
+            "pass_rate": round(pass_rate, 1),
+            "recent": runs[-10:] if runs else [],
+        }
+
+    @staticmethod
+    def _collect_case_runs(records: list[dict], case_name: str) -> list[dict]:
         runs: list[dict] = []
         for r in records:
             for c in r.get("results", []):
@@ -123,23 +137,15 @@ class HistoryManager:
                         "duration": c.get("duration", 0),
                         "message": c.get("message", ""),
                     })
+        return runs
 
-        total = len(runs)
-        passed = sum(1 for r in runs if r["status"] == "passed")
-        failed = sum(1 for r in runs if r["status"] == "failed")
-        errors = sum(1 for r in runs if r["status"] == "error")
-        skipped = sum(1 for r in runs if r["status"] == "skipped")
-        pass_rate = (passed / total * 100) if total > 0 else 0
-
+    @staticmethod
+    def _count_statuses(runs: list[dict]) -> dict:
         return {
-            "case_name": case_name,
-            "total_runs": total,
-            "passed": passed,
-            "failed": failed,
-            "errors": errors,
-            "skipped": skipped,
-            "pass_rate": round(pass_rate, 1),
-            "recent": runs[-10:] if runs else [],
+            "passed": sum(1 for r in runs if r["status"] == "passed"),
+            "failed": sum(1 for r in runs if r["status"] == "failed"),
+            "errors": sum(1 for r in runs if r["status"] == "error"),
+            "skipped": sum(1 for r in runs if r["status"] == "skipped"),
         }
 
     def submit_external(self, run_data: dict) -> dict:

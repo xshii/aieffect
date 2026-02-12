@@ -102,34 +102,19 @@ class ResultService:
 
         结果包含测试元信息和结果数据路径配置。
         """
-        for r in suite_result.results:
-            result_data = asdict(r)
-            f = self.result_dir / f"{r.name}.json"
-            f.write_text(
-                json.dumps(result_data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-
-        # 组装元信息
-        meta: dict[str, Any] = {}
-        for key in ("repo_name", "repo_ref", "repo_commit",
-                     "build_env", "exe_env", "stimulus_name"):
-            val = context.get(key, "")
-            if val:
-                meta[key] = val
-        if context.get("extra_meta"):
-            meta.update(context["extra_meta"])
-
-        # 组装结果路径配置
-        result_paths: dict[str, str] = {}
-        for key in ("log_path", "waveform_path", "coverage_path",
-                     "report_path", "artifact_dir"):
-            val = context.get(key, "")
-            if val:
-                result_paths[key] = val
-        if context.get("custom_paths"):
-            result_paths.update(context["custom_paths"])
-
+        self._persist_results(suite_result)
+        meta = self._collect_context_dict(
+            context,
+            ("repo_name", "repo_ref", "repo_commit",
+             "build_env", "exe_env", "stimulus_name"),
+            extra_key="extra_meta",
+        )
+        result_paths = self._collect_context_dict(
+            context,
+            ("log_path", "waveform_path", "coverage_path",
+             "report_path", "artifact_dir"),
+            extra_key="custom_paths",
+        )
         entry = self.history.record_run(
             suite=context.get("suite", suite_result.suite_name),
             results=[asdict(r) for r in suite_result.results],
@@ -138,14 +123,36 @@ class ResultService:
                 "snapshot_id", suite_result.snapshot_id,
             ),
             params=context.get("params"),
-            meta=meta if meta else None,
-            result_paths=result_paths if result_paths else None,
+            meta=meta or None,
+            result_paths=result_paths or None,
         )
         logger.info(
             "结果已保存: run_id=%s, %d 条",
             entry["run_id"], len(suite_result.results),
         )
         return str(entry["run_id"])
+
+    def _persist_results(self, suite_result: SuiteResult) -> None:
+        for r in suite_result.results:
+            f = self.result_dir / f"{r.name}.json"
+            f.write_text(
+                json.dumps(asdict(r), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+    @staticmethod
+    def _collect_context_dict(
+        context: dict[str, Any], keys: tuple[str, ...],
+        *, extra_key: str = "",
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key in keys:
+            val = context.get(key, "")
+            if val:
+                result[key] = val
+        if extra_key and context.get(extra_key):
+            result.update(context[extra_key])
+        return result
 
     # ---- 查询 ----
 
@@ -193,6 +200,27 @@ class ResultService:
 
     def compare_runs(self, run_id_a: str, run_id_b: str) -> dict[str, Any]:
         """对比两次执行结果"""
+        rec_a, rec_b = self._find_records(run_id_a, run_id_b)
+
+        if rec_a is None or rec_b is None:
+            missing = [
+                rid for rid, rec in ((run_id_a, rec_a), (run_id_b, rec_b))
+                if rec is None
+            ]
+            return {"error": f"未找到记录: {', '.join(missing)}"}
+
+        diffs, total = self._compute_diffs(rec_a, rec_b, run_id_a, run_id_b)
+        return {
+            "run_a": {"run_id": run_id_a, "summary": rec_a.get("summary", {})},
+            "run_b": {"run_id": run_id_b, "summary": rec_b.get("summary", {})},
+            "diffs": diffs,
+            "total_cases": total,
+            "changed_cases": len(diffs),
+        }
+
+    def _find_records(
+        self, run_id_a: str, run_id_b: str,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         all_records = self.history.query(limit=10000)
         rec_a: dict[str, Any] | None = None
         rec_b: dict[str, Any] | None = None
@@ -204,19 +232,16 @@ class ResultService:
                 rec_b = r
             if rec_a is not None and rec_b is not None:
                 break
+        return rec_a, rec_b
 
-        if rec_a is None or rec_b is None:
-            missing = []
-            if rec_a is None:
-                missing.append(run_id_a)
-            if rec_b is None:
-                missing.append(run_id_b)
-            return {"error": f"未找到记录: {', '.join(missing)}"}
-
+    @staticmethod
+    def _compute_diffs(
+        rec_a: dict[str, Any], rec_b: dict[str, Any],
+        run_id_a: str, run_id_b: str,
+    ) -> tuple[list[dict[str, str]], int]:
         cases_a = {r["name"]: r for r in rec_a.get("results", [])}
         cases_b = {r["name"]: r for r in rec_b.get("results", [])}
         all_names = sorted(set(cases_a) | set(cases_b))
-
         diffs: list[dict[str, str]] = []
         for name in all_names:
             a_status = cases_a.get(name, {}).get("status", "—")
@@ -225,20 +250,7 @@ class ResultService:
                 diffs.append(
                     {"case": name, run_id_a: a_status, run_id_b: b_status},
                 )
-
-        return {
-            "run_a": {
-                "run_id": run_id_a,
-                "summary": rec_a.get("summary", {}),
-            },
-            "run_b": {
-                "run_id": run_id_b,
-                "summary": rec_b.get("summary", {}),
-            },
-            "diffs": diffs,
-            "total_cases": len(all_names),
-            "changed_cases": len(diffs),
-        }
+        return diffs, len(all_names)
 
     # ---- 导出 ----
 
