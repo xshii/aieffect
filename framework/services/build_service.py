@@ -125,6 +125,7 @@ class BuildService(YamlRegistry):
         return self._execute_build(spec, work_dir, env_vars, effective_ref)
 
     def _resolve_ref(self, spec: BuildSpec, repo_ref: str) -> str:
+        """解析构建使用的代码分支，优先使用传入的ref，否则使用仓库默认ref"""
         if repo_ref:
             return repo_ref
         if spec.repo_name:
@@ -136,6 +137,7 @@ class BuildService(YamlRegistry):
     def _check_cache(
         self, spec: BuildSpec, ref: str, force: bool,
     ) -> BuildResult | None:
+        """检查构建缓存，返回缓存结果或None（未命中或force=True）"""
         cache_key = (spec.name, ref)
         if force or cache_key not in self._build_cache:
             return None
@@ -151,6 +153,7 @@ class BuildService(YamlRegistry):
         )
 
     def _resolve_work_dir(self, spec: BuildSpec, work_dir: str, repo_ref: str) -> str:
+        """解析构建工作目录，优先使用传入路径，否则自动checkout代码仓"""
         if work_dir:
             return work_dir
         if spec.repo_name:
@@ -166,6 +169,7 @@ class BuildService(YamlRegistry):
         self, spec: BuildSpec, work_dir: str,
         env_vars: dict[str, str] | None, effective_ref: str,
     ) -> BuildResult:
+        """执行实际的构建命令（setup → build），返回构建结果"""
         import os
         env = {**os.environ, **(env_vars or {})}
         start = time.monotonic()

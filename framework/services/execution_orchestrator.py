@@ -111,6 +111,7 @@ class ExecutionOrchestrator:
         self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
+        """步骤1: 装配构建环境和执行环境"""
         build_env = plan.build_env_name
         exe_env = plan.exe_env_name or plan.environment
         if not build_env and not exe_env:
@@ -138,6 +139,7 @@ class ExecutionOrchestrator:
         self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
+        """步骤2: 检出代码仓到本地工作空间"""
         if not plan.repo_names:
             report.steps.append({
                 "step": "checkout", "status": "skipped",
@@ -159,6 +161,7 @@ class ExecutionOrchestrator:
         self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
+        """步骤3: 执行构建任务，生成可执行文件或库"""
         if not plan.build_names:
             report.steps.append({
                 "step": "build", "status": "skipped",
@@ -183,6 +186,7 @@ class ExecutionOrchestrator:
         self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
+        """步骤4: 获取测试激励（输入数据/测试向量）"""
         if not plan.stimulus_names:
             report.steps.append({
                 "step": "acquire_stimuli", "status": "skipped",
@@ -204,6 +208,7 @@ class ExecutionOrchestrator:
         self, plan: OrchestrationPlan,
         report: OrchestrationReport,
     ) -> None:
+        """步骤5: 执行测试用例集，收集执行结果"""
         req = plan.to_run_request()
         result = self.c.run.execute(req)
         report.suite_result = result
@@ -221,6 +226,7 @@ class ExecutionOrchestrator:
         self, plan: OrchestrationPlan,
         report: OrchestrationReport,
     ) -> None:
+        """步骤6: 收集并保存测试结果到历史记录"""
         if report.suite_result is None:
             report.steps.append({
                 "step": "collect", "status": "skipped",
@@ -245,6 +251,7 @@ class ExecutionOrchestrator:
     def _step_teardown(
         self, ctx: ExecutionContext, report: OrchestrationReport,
     ) -> None:
+        """步骤7: 清理环境资源，释放会话"""
         if ctx.env_session and ctx.env_session.status == "applied":
             self.c.env.release(ctx.env_session)
         report.steps.append({"step": "teardown", "status": "done"})
