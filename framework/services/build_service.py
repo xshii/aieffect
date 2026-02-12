@@ -126,8 +126,8 @@ class BuildService(YamlRegistry):
             return repo_ref
         if spec.repo_name:
             repo_spec = self._get_repo_service().get(spec.repo_name)
-            if repo_spec:
-                return repo_spec.ref
+            if repo_spec is not None:
+                return str(repo_spec.ref)
         return ""
 
     def _check_cache(
@@ -154,7 +154,7 @@ class BuildService(YamlRegistry):
             ws = self._get_repo_service().checkout(spec.repo_name, ref_override=repo_ref)
             if ws.status == "error":
                 return "ERROR:代码仓检出失败"
-            return ws.local_path
+            return str(ws.local_path)
         path = str(self.output_root / spec.name)
         Path(path).mkdir(parents=True, exist_ok=True)
         return path
