@@ -194,12 +194,16 @@ class ResultService:
     def compare_runs(self, run_id_a: str, run_id_b: str) -> dict[str, Any]:
         """对比两次执行结果"""
         all_records = self.history.query(limit=10000)
-        rec_a = next(
-            (r for r in all_records if r.get("run_id") == run_id_a), None,
-        )
-        rec_b = next(
-            (r for r in all_records if r.get("run_id") == run_id_b), None,
-        )
+        rec_a: dict[str, Any] | None = None
+        rec_b: dict[str, Any] | None = None
+        for r in all_records:
+            rid = r.get("run_id")
+            if rid == run_id_a:
+                rec_a = r
+            elif rid == run_id_b:
+                rec_b = r
+            if rec_a is not None and rec_b is not None:
+                break
 
         if rec_a is None or rec_b is None:
             missing = []
@@ -287,6 +291,7 @@ class ResultService:
         from framework.utils.net import validate_url_scheme
         validate_url_scheme(cfg.api_url, context="result upload")
 
+        import urllib.error
         import urllib.request
         data = self.list_results()
         data["run_id"] = run_id
@@ -306,7 +311,7 @@ class ResultService:
                 "status": "success", "type": "api",
                 "response": resp_data,
             }
-        except Exception as e:
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as e:
             return {"status": "error", "type": "api", "message": str(e)}
 
     def _upload_via_rsync(self, cfg: StorageConfig) -> dict[str, Any]:

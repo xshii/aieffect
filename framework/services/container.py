@@ -6,11 +6,16 @@
     container = ServiceContainer()
     build_svc = container.build          # 懒加载
     repo_svc  = container.repo           # 同容器共享
+
+    # 全局单例（Web / 多模块共享）
+    from framework.services.container import get_container
+    svc = get_container().env
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -41,14 +46,14 @@ class ServiceContainer:
     def build(self) -> BuildService:
         if "build" not in self._instances:
             from framework.services.build_service import BuildService
-            self._instances["build"] = BuildService()
+            self._instances["build"] = BuildService(repo_service=self.repo)
         return self._instances["build"]  # type: ignore[return-value]
 
     @property
     def stimulus(self) -> StimulusService:
         if "stimulus" not in self._instances:
             from framework.services.stimulus_service import StimulusService
-            self._instances["stimulus"] = StimulusService()
+            self._instances["stimulus"] = StimulusService(repo_service=self.repo)
         return self._instances["stimulus"]  # type: ignore[return-value]
 
     @property
@@ -71,3 +76,27 @@ class ServiceContainer:
             from framework.services.run_service import RunService
             self._instances["run"] = RunService()
         return self._instances["run"]  # type: ignore[return-value]
+
+
+# ---- 全局单例 ----
+
+_global: ServiceContainer | None = None
+_global_lock = threading.Lock()
+
+
+def get_container() -> ServiceContainer:
+    """获取全局 ServiceContainer 单例（线程安全）"""
+    global _global  # noqa: PLW0603
+    if _global is not None:
+        return _global
+    with _global_lock:
+        if _global is None:
+            _global = ServiceContainer()
+        return _global
+
+
+def reset_container() -> None:
+    """重置全局容器（仅用于测试）"""
+    global _global  # noqa: PLW0603
+    with _global_lock:
+        _global = None

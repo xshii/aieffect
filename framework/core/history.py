@@ -124,13 +124,18 @@ class HistoryManager:
 
         total = len(runs)
         passed = sum(1 for r in runs if r["status"] == "passed")
+        failed = sum(1 for r in runs if r["status"] == "failed")
+        errors = sum(1 for r in runs if r["status"] == "error")
+        skipped = sum(1 for r in runs if r["status"] == "skipped")
         pass_rate = (passed / total * 100) if total > 0 else 0
 
         return {
             "case_name": case_name,
             "total_runs": total,
             "passed": passed,
-            "failed": total - passed,
+            "failed": failed,
+            "errors": errors,
+            "skipped": skipped,
             "pass_rate": round(pass_rate, 1),
             "recent": runs[-10:] if runs else [],
         }

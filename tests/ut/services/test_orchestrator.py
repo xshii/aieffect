@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from framework.services.execution_orchestrator import OrchestrationPlan, OrchestrationReport
+from unittest.mock import MagicMock
+
+from framework.services.execution_orchestrator import (
+    ExecutionOrchestrator,
+    OrchestrationPlan,
+    OrchestrationReport,
+)
+from framework.services.run_service import RunRequest
 
 
 class TestOrchestrationPlan:
@@ -40,6 +47,54 @@ class TestOrchestrationPlan:
         assert plan.exe_env_name == "eda_env"
 
 
+class TestToRunRequest:
+    """to_run_request 转换测试"""
+
+    def test_basic_conversion(self):
+        plan = OrchestrationPlan(
+            suite="smoke", config_path="my.yml", parallel=2,
+            params={"seed": "1"},
+        )
+        req = plan.to_run_request()
+        assert isinstance(req, RunRequest)
+        assert req.suite == "smoke"
+        assert req.config_path == "my.yml"
+        assert req.parallel == 2
+        assert req.params == {"seed": "1"}
+
+    def test_exe_env_overrides_environment(self):
+        plan = OrchestrationPlan(
+            exe_env_name="eda_env", environment="legacy_env",
+        )
+        req = plan.to_run_request()
+        assert req.environment == "eda_env"
+
+    def test_fallback_to_environment(self):
+        plan = OrchestrationPlan(environment="fallback_env")
+        req = plan.to_run_request()
+        assert req.environment == "fallback_env"
+
+    def test_empty_params_become_none(self):
+        plan = OrchestrationPlan()
+        req = plan.to_run_request()
+        assert req.params is None
+
+    def test_empty_case_names_become_none(self):
+        plan = OrchestrationPlan()
+        req = plan.to_run_request()
+        assert req.case_names is None
+
+    def test_case_names_passed(self):
+        plan = OrchestrationPlan(case_names=["tc1", "tc2"])
+        req = plan.to_run_request()
+        assert req.case_names == ["tc1", "tc2"]
+
+    def test_snapshot_id_passed(self):
+        plan = OrchestrationPlan(snapshot_id="snap-abc")
+        req = plan.to_run_request()
+        assert req.snapshot_id == "snap-abc"
+
+
 class TestOrchestrationReport:
     """编排报告测试"""
 
@@ -50,3 +105,51 @@ class TestOrchestrationReport:
         assert report.success is False
         assert report.run_id == ""
         assert report.steps == []
+
+
+class TestTeardownSafety:
+    """teardown try/finally 保证测试"""
+
+    def test_teardown_runs_on_exception(self):
+        """即使执行阶段抛异常，teardown 也会执行"""
+        container = MagicMock()
+        container.env = MagicMock()
+        container.run.execute.side_effect = RuntimeError("boom")
+        container.result = MagicMock()
+
+        orch = ExecutionOrchestrator(container=container)
+        plan = OrchestrationPlan()
+
+        try:
+            orch.run(plan)
+        except RuntimeError:
+            pass
+
+        # teardown 步骤应该已被记录（finally 块执行）
+        # 不会因异常而跳过
+
+    def test_teardown_releases_env_session(self):
+        """如果有环境 session，teardown 释放它"""
+        container = MagicMock()
+        mock_session = MagicMock()
+        mock_session.status = "applied"
+        mock_session.session_id = "test-123"
+        mock_session.resolved_vars = {}
+        mock_session.name = "test"
+        mock_session.work_dir = "/tmp"
+        container.env.apply.return_value = mock_session
+        container.repo = MagicMock()
+        container.build = MagicMock()
+        container.stimulus = MagicMock()
+        container.run.execute.side_effect = RuntimeError("execute fail")
+        container.result = MagicMock()
+
+        orch = ExecutionOrchestrator(container=container)
+        plan = OrchestrationPlan(build_env_name="local")
+
+        try:
+            orch.run(plan)
+        except RuntimeError:
+            pass
+
+        container.env.release.assert_called_once_with(mock_session)

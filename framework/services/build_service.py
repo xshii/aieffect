@@ -29,7 +29,10 @@ class BuildService(YamlRegistry):
 
     section_key = "builds"
 
-    def __init__(self, registry_file: str = "", output_root: str = "") -> None:
+    def __init__(
+        self, registry_file: str = "", output_root: str = "",
+        repo_service: Any = None,
+    ) -> None:
         if not registry_file:
             from framework.core.config import get_config
             registry_file = getattr(get_config(), "builds_file", "data/builds.yml")
@@ -40,6 +43,13 @@ class BuildService(YamlRegistry):
         self.output_root = Path(output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
         self._build_cache: dict[tuple[str, str], BuildResult] = {}
+        self._repo_service = repo_service
+
+    def _get_repo_service(self):
+        if self._repo_service is not None:
+            return self._repo_service
+        from framework.services.repo_service import RepoService
+        return RepoService()
 
     # ---- 注册 / CRUD ----
 
@@ -115,8 +125,7 @@ class BuildService(YamlRegistry):
         if repo_ref:
             return repo_ref
         if spec.repo_name:
-            from framework.services.repo_service import RepoService
-            repo_spec = RepoService().get(spec.repo_name)
+            repo_spec = self._get_repo_service().get(spec.repo_name)
             if repo_spec:
                 return repo_spec.ref
         return ""
@@ -142,8 +151,7 @@ class BuildService(YamlRegistry):
         if work_dir:
             return work_dir
         if spec.repo_name:
-            from framework.services.repo_service import RepoService
-            ws = RepoService().checkout(spec.repo_name, ref_override=repo_ref)
+            ws = self._get_repo_service().checkout(spec.repo_name, ref_override=repo_ref)
             if ws.status == "error":
                 return "ERROR:代码仓检出失败"
             return ws.local_path

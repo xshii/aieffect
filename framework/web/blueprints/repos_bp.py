@@ -9,16 +9,19 @@ from flask import Blueprint, jsonify, request
 repos_bp = Blueprint("repos", __name__, url_prefix="/api/repos")
 
 
+def _repo_svc():
+    from framework.services.container import get_container
+    return get_container().repo
+
+
 @repos_bp.route("", methods=["GET"])
 def list_all():
-    from framework.services.repo_service import RepoService
-    return jsonify(repos=RepoService().list_all())
+    return jsonify(repos=_repo_svc().list_all())
 
 
 @repos_bp.route("/<name>", methods=["GET"])
 def get(name: str):
-    from framework.services.repo_service import RepoService
-    spec = RepoService().get(name)
+    spec = _repo_svc().get(name)
     if spec is None:
         return jsonify(error="代码仓不存在"), 404
     return jsonify(repo=asdict(spec))
@@ -27,7 +30,6 @@ def get(name: str):
 @repos_bp.route("", methods=["POST"])
 def add():
     from framework.core.models import RepoSpec
-    from framework.services.repo_service import RepoService
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
     if not name:
@@ -46,23 +48,21 @@ def add():
         build_cmd=body.get("build_cmd", ""),
         deps=body.get("deps", []),
     )
-    entry = RepoService().register(spec)
+    entry = _repo_svc().register(spec)
     return jsonify(message=f"代码仓已注册: {name}", repo=entry)
 
 
 @repos_bp.route("/<name>", methods=["DELETE"])
 def delete(name: str):
-    from framework.services.repo_service import RepoService
-    if RepoService().remove(name):
+    if _repo_svc().remove(name):
         return jsonify(message=f"代码仓已删除: {name}")
     return jsonify(error="代码仓不存在"), 404
 
 
 @repos_bp.route("/<name>/checkout", methods=["POST"])
 def checkout(name: str):
-    from framework.services.repo_service import RepoService
     body = request.get_json(silent=True) or {}
-    ws = RepoService().checkout(name, ref_override=body.get("ref", ""))
+    ws = _repo_svc().checkout(name, ref_override=body.get("ref", ""))
     return jsonify(
         repo=name, status=ws.status,
         local_path=ws.local_path, commit=ws.commit_sha,
@@ -71,5 +71,4 @@ def checkout(name: str):
 
 @repos_bp.route("/workspaces", methods=["GET"])
 def workspaces():
-    from framework.services.repo_service import RepoService
-    return jsonify(workspaces=RepoService().list_workspaces())
+    return jsonify(workspaces=_repo_svc().list_workspaces())

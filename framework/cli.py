@@ -48,7 +48,7 @@ def run(
             params[k.strip()] = v.strip()
 
     svc = RunService()
-    svc.execute(RunRequest(
+    svc.execute_and_persist(RunRequest(
         suite=suite, config_path=config, parallel=parallel,
         environment=env, params=params or None,
         snapshot_id=snapshot,

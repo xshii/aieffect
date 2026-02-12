@@ -2,35 +2,34 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-
 from flask import Blueprint, jsonify, request
 
 envs_bp = Blueprint("envs", __name__, url_prefix="/api/envs")
 
 
+def _env_svc():
+    from framework.services.container import get_container
+    return get_container().env
+
+
 @envs_bp.route("", methods=["GET"])
 def list_all():
-    from framework.services.env_service import EnvService
-    return jsonify(environments=EnvService().list_all())
+    return jsonify(environments=_env_svc().list_all())
 
 
 @envs_bp.route("/build", methods=["GET"])
 def build_list():
-    from framework.services.env_service import EnvService
-    return jsonify(build_envs=EnvService().list_build_envs())
+    return jsonify(build_envs=_env_svc().list_build_envs())
 
 
 @envs_bp.route("/exe", methods=["GET"])
 def exe_list():
-    from framework.services.env_service import EnvService
-    return jsonify(exe_envs=EnvService().list_exe_envs())
+    return jsonify(exe_envs=_env_svc().list_exe_envs())
 
 
 @envs_bp.route("/build", methods=["POST"])
 def build_add():
     from framework.core.models import BuildEnvSpec
-    from framework.services.env_service import EnvService
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
     if not name:
@@ -46,14 +45,13 @@ def build_add():
         user=body.get("user", ""),
         key_path=body.get("key_path", ""),
     )
-    entry = EnvService().register_build_env(spec)
+    entry = _env_svc().register_build_env(spec)
     return jsonify(message=f"构建环境已注册: {name}", build_env=entry)
 
 
 @envs_bp.route("/exe", methods=["POST"])
 def exe_add():
     from framework.core.models import ExeEnvSpec, ToolSpec
-    from framework.services.env_service import EnvService
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
     if not name:
@@ -78,32 +76,29 @@ def exe_add():
         timeout=body.get("timeout", 3600),
         build_env_name=body.get("build_env_name", ""),
     )
-    entry = EnvService().register_exe_env(spec)
+    entry = _env_svc().register_exe_env(spec)
     return jsonify(message=f"执行环境已注册: {name}", exe_env=entry)
 
 
 @envs_bp.route("/build/<name>", methods=["DELETE"])
 def build_delete(name: str):
-    from framework.services.env_service import EnvService
-    if EnvService().remove_build_env(name):
+    if _env_svc().remove_build_env(name):
         return jsonify(message=f"构建环境已删除: {name}")
     return jsonify(error="构建环境不存在"), 404
 
 
 @envs_bp.route("/exe/<name>", methods=["DELETE"])
 def exe_delete(name: str):
-    from framework.services.env_service import EnvService
-    if EnvService().remove_exe_env(name):
+    if _env_svc().remove_exe_env(name):
         return jsonify(message=f"执行环境已删除: {name}")
     return jsonify(error="执行环境不存在"), 404
 
 
 @envs_bp.route("/apply", methods=["POST"])
 def apply():
-    from framework.services.env_service import EnvService
     body = request.get_json(silent=True) or {}
     try:
-        session = EnvService().apply(
+        session = _env_svc().apply(
             build_env_name=body.get("build_env_name", ""),
             exe_env_name=body.get("exe_env_name", ""),
         )
@@ -119,14 +114,12 @@ def apply():
 
 @envs_bp.route("/sessions", methods=["GET"])
 def sessions():
-    from framework.services.env_service import EnvService
-    return jsonify(sessions=EnvService().list_sessions())
+    return jsonify(sessions=_env_svc().list_sessions())
 
 
 @envs_bp.route("/sessions/<session_id>/release", methods=["POST"])
 def release(session_id: str):
-    from framework.services.env_service import EnvService
-    svc = EnvService()
+    svc = _env_svc()
     session = svc.get_session(session_id)
     if session is None:
         return jsonify(error="会话不存在"), 404
@@ -136,8 +129,7 @@ def release(session_id: str):
 
 @envs_bp.route("/sessions/<session_id>/timeout", methods=["POST"])
 def timeout(session_id: str):
-    from framework.services.env_service import EnvService
-    svc = EnvService()
+    svc = _env_svc()
     session = svc.get_session(session_id)
     if session is None:
         return jsonify(error="会话不存在"), 404
@@ -147,8 +139,7 @@ def timeout(session_id: str):
 
 @envs_bp.route("/sessions/<session_id>/invalid", methods=["POST"])
 def invalid(session_id: str):
-    from framework.services.env_service import EnvService
-    svc = EnvService()
+    svc = _env_svc()
     session = svc.get_session(session_id)
     if session is None:
         return jsonify(error="会话不存在"), 404
@@ -158,12 +149,11 @@ def invalid(session_id: str):
 
 @envs_bp.route("/execute", methods=["POST"])
 def execute():
-    from framework.services.env_service import EnvService
     body = request.get_json(silent=True) or {}
     cmd = body.get("cmd", "")
     if not cmd:
         return jsonify(error="需要提供 cmd"), 400
-    svc = EnvService()
+    svc = _env_svc()
     try:
         session = svc.apply(
             build_env_name=body.get("build_env_name", ""),

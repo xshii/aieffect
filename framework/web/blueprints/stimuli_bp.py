@@ -6,26 +6,22 @@ from dataclasses import asdict
 
 from flask import Blueprint, jsonify, request
 
-from framework.core.models import (
-    RepoSpec,
-    ResultStimulusSpec,
-    StimulusSpec,
-    TriggerSpec,
-)
-
 stimuli_bp = Blueprint("stimuli", __name__, url_prefix="/api/stimuli")
+
+
+def _stimulus_svc():
+    from framework.services.container import get_container
+    return get_container().stimulus
 
 
 @stimuli_bp.route("", methods=["GET"])
 def list_all():
-    from framework.services.stimulus_service import StimulusService
-    return jsonify(stimuli=StimulusService().list_all())
+    return jsonify(stimuli=_stimulus_svc().list_all())
 
 
 @stimuli_bp.route("/<name>", methods=["GET"])
 def get(name: str):
-    from framework.services.stimulus_service import StimulusService
-    spec = StimulusService().get(name)
+    spec = _stimulus_svc().get(name)
     if spec is None:
         return jsonify(error="激励不存在"), 404
     return jsonify(stimulus=asdict(spec))
@@ -33,7 +29,7 @@ def get(name: str):
 
 @stimuli_bp.route("", methods=["POST"])
 def add():
-    from framework.services.stimulus_service import StimulusService
+    from framework.core.models import RepoSpec, StimulusSpec
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
     if not name:
@@ -54,23 +50,21 @@ def add():
         params=body.get("params", {}),
         template=body.get("template", ""),
     )
-    entry = StimulusService().register(spec)
+    entry = _stimulus_svc().register(spec)
     return jsonify(message=f"激励已注册: {name}", stimulus=entry)
 
 
 @stimuli_bp.route("/<name>", methods=["DELETE"])
 def delete(name: str):
-    from framework.services.stimulus_service import StimulusService
-    if StimulusService().remove(name):
+    if _stimulus_svc().remove(name):
         return jsonify(message=f"激励已删除: {name}")
     return jsonify(error="激励不存在"), 404
 
 
 @stimuli_bp.route("/<name>/acquire", methods=["POST"])
 def acquire(name: str):
-    from framework.services.stimulus_service import StimulusService
     try:
-        art = StimulusService().acquire(name)
+        art = _stimulus_svc().acquire(name)
         return jsonify(
             name=name, status=art.status,
             local_path=art.local_path, checksum=art.checksum,
@@ -81,10 +75,9 @@ def acquire(name: str):
 
 @stimuli_bp.route("/<name>/construct", methods=["POST"])
 def construct(name: str):
-    from framework.services.stimulus_service import StimulusService
     body = request.get_json(silent=True) or {}
     try:
-        art = StimulusService().construct(name, params=body.get("params"))
+        art = _stimulus_svc().construct(name, params=body.get("params"))
         return jsonify(
             name=name, status=art.status,
             local_path=art.local_path, checksum=art.checksum,
@@ -97,13 +90,12 @@ def construct(name: str):
 
 @stimuli_bp.route("/result", methods=["GET"])
 def result_list():
-    from framework.services.stimulus_service import StimulusService
-    return jsonify(result_stimuli=StimulusService().list_result_stimuli())
+    return jsonify(result_stimuli=_stimulus_svc().list_result_stimuli())
 
 
 @stimuli_bp.route("/result", methods=["POST"])
 def result_add():
-    from framework.services.stimulus_service import StimulusService
+    from framework.core.models import ResultStimulusSpec
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
     if not name:
@@ -117,15 +109,14 @@ def result_add():
         parser_cmd=body.get("parser_cmd", ""),
         description=body.get("description", ""),
     )
-    entry = StimulusService().register_result_stimulus(spec)
+    entry = _stimulus_svc().register_result_stimulus(spec)
     return jsonify(message=f"结果激励已注册: {name}", result_stimulus=entry)
 
 
 @stimuli_bp.route("/result/<name>/collect", methods=["POST"])
 def result_collect(name: str):
-    from framework.services.stimulus_service import StimulusService
     try:
-        art = StimulusService().collect_result_stimulus(name)
+        art = _stimulus_svc().collect_result_stimulus(name)
         return jsonify(
             name=name, status=art.status,
             local_path=art.local_path, data=art.data,
@@ -138,13 +129,12 @@ def result_collect(name: str):
 
 @stimuli_bp.route("/triggers", methods=["GET"])
 def triggers_list():
-    from framework.services.stimulus_service import StimulusService
-    return jsonify(triggers=StimulusService().list_triggers())
+    return jsonify(triggers=_stimulus_svc().list_triggers())
 
 
 @stimuli_bp.route("/triggers", methods=["POST"])
 def triggers_add():
-    from framework.services.stimulus_service import StimulusService
+    from framework.core.models import TriggerSpec
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
     if not name:
@@ -158,16 +148,15 @@ def triggers_add():
         stimulus_name=body.get("stimulus_name", ""),
         description=body.get("description", ""),
     )
-    entry = StimulusService().register_trigger(spec)
+    entry = _stimulus_svc().register_trigger(spec)
     return jsonify(message=f"触发器已注册: {name}", trigger=entry)
 
 
 @stimuli_bp.route("/triggers/<name>/fire", methods=["POST"])
 def triggers_fire(name: str):
-    from framework.services.stimulus_service import StimulusService
     body = request.get_json(silent=True) or {}
     try:
-        result = StimulusService().trigger(
+        result = _stimulus_svc().trigger(
             name,
             stimulus_path=body.get("stimulus_path", ""),
             payload=body.get("payload"),

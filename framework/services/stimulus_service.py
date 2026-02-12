@@ -41,7 +41,10 @@ class StimulusService(YamlRegistry):
 
     section_key = "stimuli"
 
-    def __init__(self, registry_file: str = "", artifact_dir: str = "") -> None:
+    def __init__(
+        self, registry_file: str = "", artifact_dir: str = "",
+        repo_service: Any = None,
+    ) -> None:
         if not registry_file:
             from framework.core.config import get_config
             registry_file = getattr(get_config(), "stimuli_file", "data/stimuli.yml")
@@ -51,6 +54,7 @@ class StimulusService(YamlRegistry):
         super().__init__(registry_file)
         self.artifact_dir = Path(artifact_dir)
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
+        self._repo_service = repo_service
 
     def _result_stimuli_section(self) -> dict[str, dict[str, Any]]:
         result: dict[str, dict[str, Any]] = self._data.setdefault("result_stimuli", {})
@@ -229,12 +233,17 @@ class StimulusService(YamlRegistry):
             spec=spec, local_path=str(dest), checksum=checksum, status="ready",
         )
 
+    def _get_repo_service(self):
+        if self._repo_service is not None:
+            return self._repo_service
+        from framework.services.repo_service import RepoService
+        return RepoService()
+
     def _acquire_from_repo(self, spec: StimulusSpec, dest: Path) -> StimulusArtifact:
         """从代码仓检出激励"""
         if spec.repo is None or not spec.repo.url:
             raise ValidationError("repo 类型激励必须指定 repo.url")
-        from framework.services.repo_service import RepoService
-        svc = RepoService()
+        svc = self._get_repo_service()
         ws = svc.checkout(spec.repo.name)
         return StimulusArtifact(
             spec=spec, local_path=ws.local_path,

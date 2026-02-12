@@ -14,14 +14,17 @@ from framework.web.app import app
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """创建 Flask 测试客户端，临时数据目录"""
     import framework.core.config as cfgmod
+    from framework.services.container import reset_container
     cfg = cfgmod.Config(
         result_dir=str(tmp_path / "results"),
         manifest=str(tmp_path / "manifest.yml"),
     )
     monkeypatch.setattr(cfgmod, "_current", cfg)
+    reset_container()
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c
+    reset_container()
 
 
 class TestGlobalErrorHandlers:

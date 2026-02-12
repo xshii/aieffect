@@ -187,11 +187,11 @@ class RepoService(YamlRegistry):
             self._clone_or_fetch(spec.url, ref, workspace)
             ws.commit_sha = self._get_commit_sha(workspace)
             ws.status = "updated"
+            logger.info("Git 就绪: %s@%s -> %s", spec.name, ref, workspace)
         except (subprocess.SubprocessError, OSError) as e:
             ws.status = "error"
             logger.error("Git 检出失败 %s@%s: %s", spec.name, ref, e)
 
-        logger.info("Git 就绪: %s@%s -> %s", spec.name, ref, workspace)
         return ws
 
     # ---- Tar 解压 ----
@@ -330,28 +330,45 @@ class RepoService(YamlRegistry):
     @staticmethod
     def _clone_or_fetch(url: str, ref: str, workspace: Path) -> None:
         if (workspace / ".git").exists():
-            subprocess.run(
+            r = subprocess.run(
                 ["git", "fetch", "--depth", "1", "origin", ref],
-                cwd=str(workspace), capture_output=True, check=False,
+                cwd=str(workspace), capture_output=True, text=True, check=False,
             )
-            subprocess.run(
+            if r.returncode != 0:
+                raise subprocess.SubprocessError(
+                    f"git fetch 失败 (rc={r.returncode}): {r.stderr[:300]}"
+                )
+            r = subprocess.run(
                 ["git", "checkout", "FETCH_HEAD"],
-                cwd=str(workspace), capture_output=True, check=False,
+                cwd=str(workspace), capture_output=True, text=True, check=False,
             )
+            if r.returncode != 0:
+                raise subprocess.SubprocessError(
+                    f"git checkout 失败 (rc={r.returncode}): {r.stderr[:300]}"
+                )
         else:
             result = subprocess.run(
                 ["git", "clone", "--depth", "1", "--branch", ref, url, str(workspace)],
                 capture_output=True, text=True, check=False,
             )
             if result.returncode != 0:
-                subprocess.run(
+                # 回退: 完整 clone + checkout
+                r2 = subprocess.run(
                     ["git", "clone", url, str(workspace)],
                     capture_output=True, text=True, check=False,
                 )
-                subprocess.run(
+                if r2.returncode != 0:
+                    raise subprocess.SubprocessError(
+                        f"git clone 失败 (rc={r2.returncode}): {r2.stderr[:300]}"
+                    )
+                r3 = subprocess.run(
                     ["git", "checkout", ref],
-                    cwd=str(workspace), capture_output=True, check=False,
+                    cwd=str(workspace), capture_output=True, text=True, check=False,
                 )
+                if r3.returncode != 0:
+                    raise subprocess.SubprocessError(
+                        f"git checkout 失败 (rc={r3.returncode}): {r3.stderr[:300]}"
+                    )
 
     @staticmethod
     def _get_commit_sha(workspace: Path) -> str:
