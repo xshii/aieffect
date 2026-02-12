@@ -436,7 +436,10 @@ def repo_list() -> None:
 
 @repo_group.command(name="add")
 @click.argument("name")
-@click.option("--type", "source_type", default="git", type=click.Choice(["git", "tar", "api"]), help="来源类型")
+@click.option(
+    "--type", "source_type", default="git",
+    type=click.Choice(["git", "tar", "api"]), help="来源类型"
+)
 @click.option("--url", default="", help="Git 仓库地址")
 @click.option("--ref", default="main", help="分支/tag/commit")
 @click.option("--path", default="", help="仓内子目录")
@@ -695,7 +698,9 @@ def stimulus_list() -> None:
         click.echo("没有已注册的激励。")
         return
     for s in items:
-        click.echo(f"  {s['name']:20s} type={s.get('source_type', '?'):10s} {s.get('description', '')}")
+        source_type = s.get('source_type', '?')
+        description = s.get('description', '')
+        click.echo(f"  {s['name']:20s} type={source_type:10s} {description}")
 
 
 @stimulus_group.command(name="add")
@@ -852,7 +857,9 @@ def build_list() -> None:
         click.echo("没有已注册的构建配置。")
         return
     for b in items:
-        click.echo(f"  {b['name']:20s} repo={b.get('repo_name', '-'):15s} build={b.get('build_cmd', '')}")
+        repo_name = b.get('repo_name', '-')
+        build_cmd = b.get('build_cmd', '')
+        click.echo(f"  {b['name']:20s} repo={repo_name:15s} build={build_cmd}")
 
 
 @build_group.command(name="add")
@@ -927,7 +934,10 @@ def result_list() -> None:
     svc = ResultService()
     data = svc.list_results()
     s = data["summary"]
-    click.echo(f"汇总: total={s['total']} passed={s['passed']} failed={s['failed']} errors={s['errors']}")
+    click.echo(
+        f"汇总: total={s['total']} passed={s['passed']} "
+        f"failed={s['failed']} errors={s['errors']}"
+    )
 
 
 @result_group.command(name="compare")
@@ -1039,7 +1049,10 @@ def _print_orchestrate_report(report: Any) -> None:
 
     if report.suite_result:
         sr = report.suite_result
-        click.echo(f"\n结果: total={sr.total} passed={sr.passed} failed={sr.failed} errors={sr.errors}")
+        click.echo(
+            f"\n结果: total={sr.total} passed={sr.passed} "
+            f"failed={sr.failed} errors={sr.errors}"
+        )
     if report.run_id:
         click.echo(f"run_id: {report.run_id}")
     click.echo(f"成功: {'是' if report.success else '否'}")

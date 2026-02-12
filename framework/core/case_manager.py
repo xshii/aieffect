@@ -95,4 +95,3 @@ class CaseManager(YamlRegistry):
         self._save()
         logger.info("用例已删除: %s", name)
         return True
-

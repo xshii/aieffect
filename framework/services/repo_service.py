@@ -377,4 +377,3 @@ class RepoService(YamlRegistry):
             cwd=str(workspace), capture_output=True, text=True, check=False,
         )
         return r.stdout.strip()[:12] if r.returncode == 0 else ""
-
