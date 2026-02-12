@@ -14,7 +14,10 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from framework.services.repo_service import RepoService
 
 from framework.core.exceptions import CaseNotFoundError, ValidationError
 from framework.core.models import BuildResult, BuildSpec
@@ -45,9 +48,9 @@ class BuildService(YamlRegistry):
         self._build_cache: dict[tuple[str, str], BuildResult] = {}
         self._repo_service = repo_service
 
-    def _get_repo_service(self):
+    def _get_repo_service(self) -> RepoService:
         if self._repo_service is not None:
-            return self._repo_service
+            return self._repo_service  # type: ignore[return-value]
         from framework.services.repo_service import RepoService
         return RepoService()
 

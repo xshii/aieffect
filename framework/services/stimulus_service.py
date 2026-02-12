@@ -15,7 +15,10 @@ import logging
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from framework.services.repo_service import RepoService
 
 from framework.core.exceptions import CaseNotFoundError, ValidationError
 from framework.core.models import (
@@ -233,9 +236,9 @@ class StimulusService(YamlRegistry):
             spec=spec, local_path=str(dest), checksum=checksum, status="ready",
         )
 
-    def _get_repo_service(self):
+    def _get_repo_service(self) -> RepoService:
         if self._repo_service is not None:
-            return self._repo_service
+            return self._repo_service  # type: ignore[return-value]
         from framework.services.repo_service import RepoService
         return RepoService()
 
