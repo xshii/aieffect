@@ -45,10 +45,7 @@ class Storage(ABC):
 class LocalStorage(Storage):
     """本地文件系统存储"""
 
-    def __init__(self, base_dir: str = "") -> None:
-        if not base_dir:
-            from framework.core.config import get_config
-            base_dir = get_config().storage_dir
+    def __init__(self, base_dir: str) -> None:
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 

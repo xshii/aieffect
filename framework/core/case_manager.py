@@ -20,10 +20,7 @@ class CaseManager(YamlRegistry):
 
     section_key = "cases"
 
-    def __init__(self, cases_file: str = "") -> None:
-        if not cases_file:
-            from framework.core.config import get_config
-            cases_file = get_config().cases_file
+    def __init__(self, cases_file: str) -> None:
         super().__init__(cases_file)
 
     def _cases(self) -> dict[str, dict[str, Any]]:

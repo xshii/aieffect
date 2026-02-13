@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from framework.core.collector import save_results
+from framework.core.pipeline import save_results
 from framework.core.scheduler import TaskResult
 
 

@@ -18,9 +18,9 @@
   - list_local_versions() 查看本地已安装的所有版本
 
 用法:
-    from framework.core.dep_manager import DepManager
+    from framework.services.container import get_container
 
-    dm = DepManager()
+    dm = get_container().deps
     dm.fetch_all()
     dm.fetch("model_lib", version="v2.1.0")
 
@@ -46,11 +46,6 @@ from framework.core.exceptions import DataError, DependencyError, ResourceError
 from framework.utils.yaml_io import load_yaml
 
 logger = logging.getLogger(__name__)
-
-def _packages_dir() -> str:
-    """获取包存储目录（统一走 Config）"""
-    from framework.core.config import get_config
-    return get_config().packages_dir
 
 
 @dataclass
@@ -79,17 +74,14 @@ class DepManager:
 
     def __init__(
         self,
-        registry_path: str = "",
-        cache_dir: str = "",
+        registry_path: str,
+        cache_dir: str,
+        packages_dir: str = "deps/packages",
     ) -> None:
-        if not registry_path or not cache_dir:
-            from framework.core.config import get_config
-            cfg = get_config()
-            registry_path = registry_path or cfg.manifest
-            cache_dir = cache_dir or cfg.cache_dir
         self.registry_path = Path(registry_path)
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.packages_dir = Path(packages_dir)
         self.packages: dict[str, PackageInfo] = {}
         self._load_registry()
 
@@ -171,7 +163,7 @@ class DepManager:
         if pkg.source == "lfs":
             if pkg.lfs_path:
                 return Path(pkg.lfs_path)
-            return Path(_packages_dir()) / pkg.name / version
+            return self.packages_dir / pkg.name / version
         # api/url 类型的缓存目录
         return self.cache_dir / pkg.name / version
 
@@ -190,7 +182,7 @@ class DepManager:
         if pkg.base_path:
             base = Path(pkg.base_path)
         elif pkg.source == "lfs":
-            base = Path(_packages_dir()) / pkg.name
+            base = self.packages_dir / pkg.name
         else:
             base = self.cache_dir / pkg.name
 
@@ -321,7 +313,7 @@ class DepManager:
         if pkg.lfs_path:
             lfs_path = Path(pkg.lfs_path)
         else:
-            lfs_path = Path(_packages_dir()) / pkg.name / version
+            lfs_path = self.packages_dir / pkg.name / version
         if not lfs_path.exists():
             logger.info("  执行 git lfs pull: %s", lfs_path)
             subprocess.run(
@@ -391,7 +383,7 @@ class DepManager:
         if not src.exists():
             raise ResourceError(f"源文件不存在: {src_path}")
 
-        dest_dir = Path(_packages_dir()) / name / version
+        dest_dir = self.packages_dir / name / version
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         if src.is_dir():

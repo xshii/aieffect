@@ -28,33 +28,36 @@ RepoPreparer = Callable[[dict[str, str]], "Path | None"]
 _SAFE_REF_RE = re.compile(r"^[a-zA-Z0-9_./@\-]+$")
 
 
-def _default_prepare_repo(repo: dict[str, str]) -> Path | None:
-    """默认仓库准备策略 — 保持原有行为，但复用 shell.run_cmd"""
-    url = repo.get("url", "")
-    if not url:
-        return None
+def make_repo_preparer(workspace_dir: str) -> RepoPreparer:
+    """创建仓库准备策略（捕获 workspace_dir，无需运行时查 Config）"""
 
-    ref = repo.get("ref", "main")
-    if not _SAFE_REF_RE.match(ref):
-        raise ValidationError(f"ref 包含非法字符: {ref}")
+    def _prepare(repo: dict[str, str]) -> Path | None:
+        url = repo.get("url", "")
+        if not url:
+            return None
 
-    from framework.core.config import get_config
-    repo_name = url.rstrip("/").split("/")[-1].removesuffix(".git")
-    workspace = Path(get_config().workspace_dir) / repo_name / ref.replace("/", "_")
-    workspace.mkdir(parents=True, exist_ok=True)
+        ref = repo.get("ref", "main")
+        if not _SAFE_REF_RE.match(ref):
+            raise ValidationError(f"ref 包含非法字符: {ref}")
 
-    _clone_or_fetch(url, ref, workspace)
+        repo_name = url.rstrip("/").split("/")[-1].removesuffix(".git")
+        workspace = Path(workspace_dir) / repo_name / ref.replace("/", "_")
+        workspace.mkdir(parents=True, exist_ok=True)
 
-    cwd = workspace / repo.get("path", "") if repo.get("path") else workspace
-    if not cwd.exists():
-        raise ResourceError(f"仓库子目录不存在: {cwd}")
+        _clone_or_fetch(url, ref, workspace)
 
-    if repo.get("setup"):
-        run_cmd(repo["setup"], cwd=str(cwd), label="安装依赖")
-    if repo.get("build"):
-        run_cmd(repo["build"], cwd=str(cwd), label="编译")
+        cwd = workspace / repo.get("path", "") if repo.get("path") else workspace
+        if not cwd.exists():
+            raise ResourceError(f"仓库子目录不存在: {cwd}")
 
-    return cwd
+        if repo.get("setup"):
+            run_cmd(repo["setup"], cwd=str(cwd), label="安装依赖")
+        if repo.get("build"):
+            run_cmd(repo["build"], cwd=str(cwd), label="编译")
+
+        return cwd
+
+    return _prepare
 
 
 def _clone_or_fetch(url: str, ref: str, workspace: Path) -> None:
@@ -86,11 +89,6 @@ def _clone_or_fetch(url: str, ref: str, workspace: Path) -> None:
             )
 
 
-def _prepare_repo(repo: dict[str, str]) -> Path | None:
-    """向后兼容入口 — 委托 _default_prepare_repo"""
-    return _default_prepare_repo(repo)
-
-
 class Scheduler:
     """可配置并行度的测试调度器
 
@@ -98,7 +96,7 @@ class Scheduler:
     资源不足时等待或跳过。
 
     通过 repo_preparer 参数注入仓库准备策略（Strategy 模式），
-    默认使用 _default_prepare_repo，测试时可替换为 mock。
+    使用 make_repo_preparer() 工厂创建默认实现。
     """
 
     def __init__(
@@ -109,7 +107,12 @@ class Scheduler:
     ) -> None:
         self.max_workers = max(1, max_workers)
         self.resource_mgr = resource_manager
-        self._repo_preparer = repo_preparer or _default_prepare_repo
+        self._repo_preparer = repo_preparer or self._noop_preparer
+
+    @staticmethod
+    def _noop_preparer(repo: dict[str, str]) -> Path | None:
+        """空准备器 — 未注入 repo_preparer 时返回 None"""
+        return None
 
     @staticmethod
     def _err(name: str, start: float, msg: str) -> TaskResult:

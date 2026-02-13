@@ -77,6 +77,6 @@ class TestSnapshotManager:
 
     def test_nonexistent_snapshot(self, tmp_path: Path) -> None:
         snap_dir = tmp_path / "snapshots"
-        sm = SnapshotManager(snapshots_dir=str(snap_dir))
+        sm = SnapshotManager(manifest_path=str(tmp_path / "nope.yml"), snapshots_dir=str(snap_dir))
         assert sm.get("nonexistent") is None
         assert sm.restore("nonexistent") is False

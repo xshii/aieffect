@@ -38,9 +38,9 @@ class RunService:
 
     def __init__(
         self,
-        pipeline: ResultPipeline | None = None,
+        pipeline: ResultPipeline,
     ) -> None:
-        self.pipeline = pipeline or ResultPipeline()
+        self.pipeline = pipeline
 
     def execute(self, req: RunRequest) -> SuiteResult:
         """执行套件并返回结果（不自动持久化）"""

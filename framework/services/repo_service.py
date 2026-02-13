@@ -19,7 +19,10 @@ import subprocess
 import tarfile
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from framework.core.dep_manager import DepManager
 
 from framework.core.exceptions import DependencyError, ExecutionError, ValidationError
 from framework.core.models import CaseRepoBinding, RepoSpec, RepoWorkspace
@@ -36,15 +39,15 @@ class RepoService(YamlRegistry):
 
     section_key = "repos"
 
-    def __init__(self, registry_file: str = "", workspace_root: str = "") -> None:
-        registry_file = self._resolve_registry_file(registry_file, "repos_file")
-        if not workspace_root:
-            from framework.core.config import get_config
-            workspace_root = get_config().workspace_dir
+    def __init__(
+        self, registry_file: str, workspace_root: str,
+        dep_manager: DepManager | None = None,
+    ) -> None:
         super().__init__(registry_file)
         self.workspace_root = Path(workspace_root)
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self._workspace_cache: dict[tuple[str, str], RepoWorkspace] = {}
+        self._dep_manager = dep_manager
 
     # ---- 注册 / CRUD ----
 
@@ -160,8 +163,8 @@ class RepoService(YamlRegistry):
         """检出后执行依赖解析和 setup/build 步骤"""
         if ws.status in ("error", "pending"):
             return
-        if spec.deps:
-            self._resolve_deps(spec.deps)
+        if spec.deps and self._dep_manager:
+            self._resolve_deps(spec.deps, self._dep_manager)
         cwd = Path(ws.local_path)
         if spec.path:
             cwd = cwd / spec.path
@@ -285,19 +288,14 @@ class RepoService(YamlRegistry):
     # ---- 依赖解析 ----
 
     @staticmethod
-    def _resolve_deps(dep_names: list[str]) -> None:
+    def _resolve_deps(dep_names: list[str], dm: DepManager) -> None:
         """解析代码仓关联的依赖包"""
-        try:
-            from framework.core.dep_manager import DepManager
-            dm = DepManager()
-            for dep_name in dep_names:
-                try:
-                    dm.fetch(dep_name)
-                    logger.info("  依赖就绪: %s", dep_name)
-                except (OSError, DependencyError, ExecutionError) as e:
-                    logger.warning("  依赖获取失败（非致命）: %s - %s", dep_name, e)
-        except (OSError, DependencyError) as e:
-            logger.warning("  依赖管理器初始化失败: %s", e)
+        for dep_name in dep_names:
+            try:
+                dm.fetch(dep_name)
+                logger.info("  依赖就绪: %s", dep_name)
+            except (OSError, DependencyError, ExecutionError) as e:
+                logger.warning("  依赖获取失败（非致命）: %s - %s", dep_name, e)
 
     # ---- 工作目录管理 ----
 

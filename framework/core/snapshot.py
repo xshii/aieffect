@@ -22,14 +22,9 @@ class SnapshotManager:
 
     def __init__(
         self,
-        manifest_path: str = "",
-        snapshots_dir: str = "",
+        manifest_path: str,
+        snapshots_dir: str,
     ) -> None:
-        if not manifest_path or not snapshots_dir:
-            from framework.core.config import get_config
-            cfg = get_config()
-            manifest_path = manifest_path or cfg.manifest
-            snapshots_dir = snapshots_dir or cfg.snapshots_dir
         self.manifest_path = Path(manifest_path)
         self.snapshots_dir = Path(snapshots_dir)
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)

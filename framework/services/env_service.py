@@ -248,8 +248,7 @@ class EnvService(YamlRegistry):
 
     section_key = "build_envs"
 
-    def __init__(self, registry_file: str = "") -> None:
-        registry_file = self._resolve_registry_file(registry_file, "envs_file")
+    def __init__(self, registry_file: str) -> None:
         super().__init__(registry_file)
         self._sessions: dict[str, EnvSession] = {}
 

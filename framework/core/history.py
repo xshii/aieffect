@@ -20,10 +20,7 @@ logger = logging.getLogger(__name__)
 class HistoryManager:
     """执行历史管理器"""
 
-    def __init__(self, history_file: str = "") -> None:
-        if not history_file:
-            from framework.core.config import get_config
-            history_file = get_config().history_file
+    def __init__(self, history_file: str) -> None:
         self.history_file = Path(history_file)
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
 

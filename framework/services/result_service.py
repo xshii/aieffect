@@ -85,12 +85,9 @@ class ResultService:
     """统一结果管理"""
 
     def __init__(
-        self, result_dir: str = "", history_file: str = "",
+        self, result_dir: str, history_file: str = "",
         storage_config: StorageConfig | None = None,
     ) -> None:
-        if not result_dir:
-            from framework.core.config import get_config
-            result_dir = get_config().result_dir
         self.result_dir = Path(result_dir)
         self.result_dir.mkdir(parents=True, exist_ok=True)
         self.history = HistoryManager(history_file=history_file)

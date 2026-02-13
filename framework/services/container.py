@@ -4,13 +4,15 @@
 CLI 和 Web 层均应通过 get_container() 获取服务，而非直接 import 构造。
 
 依赖关系图（→ 表示依赖）:
+  repo    → deps
   build   → repo
   stimulus → repo
+  run     → pipeline → history
   其余服务均为独立实例
 
 Config 注入:
   容器接受可选 Config 参数，将配置显式传递给各服务/管理器。
-  若不提供，则使用全局 get_config() 作为后备（向后兼容）。
+  若不提供，则使用全局 get_config() 获取默认配置。
 
 用法:
     container = ServiceContainer()
@@ -77,6 +79,7 @@ class ServiceContainer:
             self._instances["repo"] = RepoService(
                 registry_file=self._config.repos_file,
                 workspace_root=self._config.workspace_dir,
+                dep_manager=self.deps,
             )
         return self._instances["repo"]  # type: ignore[return-value]
 
@@ -124,8 +127,13 @@ class ServiceContainer:
     @property
     def run(self) -> RunService:
         if "run" not in self._instances:
+            from framework.core.pipeline import ResultPipeline
             from framework.services.run_service import RunService
-            self._instances["run"] = RunService()
+            pipeline = ResultPipeline(
+                history_file=self._config.history_file,
+                result_dir=self._config.result_dir,
+            )
+            self._instances["run"] = RunService(pipeline=pipeline)
         return self._instances["run"]  # type: ignore[return-value]
 
     # ---- 核心管理器（Facade — 统一访问入口） ----
@@ -146,6 +154,7 @@ class ServiceContainer:
             self._instances["deps"] = DepManager(
                 registry_path=self._config.manifest,
                 cache_dir=self._config.cache_dir,
+                packages_dir=self._config.packages_dir,
             )
         return self._instances["deps"]  # type: ignore[return-value]
 

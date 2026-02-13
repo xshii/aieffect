@@ -48,13 +48,9 @@ class StimulusService(YamlRegistry):
     section_key = "stimuli"
 
     def __init__(
-        self, registry_file: str = "", artifact_dir: str = "",
+        self, registry_file: str, artifact_dir: str,
         repo_service: RepoService | None = None,
     ) -> None:
-        registry_file = self._resolve_registry_file(registry_file, "stimuli_file")
-        if not artifact_dir:
-            from framework.core.config import get_config
-            artifact_dir = str(Path(get_config().workspace_dir) / "stimuli")
         super().__init__(registry_file)
         self.artifact_dir = Path(artifact_dir)
         self.artifact_dir.mkdir(parents=True, exist_ok=True)

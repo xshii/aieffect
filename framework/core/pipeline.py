@@ -28,11 +28,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def save_results(results: list[TaskResult], output_dir: str = "") -> list[str]:
-    """批量保存测试结果为 JSON 文件（原 collector.py 内联）"""
-    if not output_dir:
-        from framework.core.config import get_config
-        output_dir = get_config().result_dir
+def save_results(results: list[TaskResult], output_dir: str) -> list[str]:
+    """批量保存测试结果为 JSON 文件"""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -57,13 +54,10 @@ class ResultPipeline:
 
     def __init__(
         self,
-        history_file: str = "",
-        result_dir: str = "",
+        history_file: str,
+        result_dir: str,
     ) -> None:
         self.history = HistoryManager(history_file=history_file)
-        if not result_dir:
-            from framework.core.config import get_config
-            result_dir = get_config().result_dir
         self.result_dir = result_dir
         self._hooks: list[PipelineHook] = []
 

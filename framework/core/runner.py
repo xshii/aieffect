@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from framework.core.models import Case, SuiteResult, TaskResult
-from framework.core.scheduler import Scheduler
+from framework.core.scheduler import Scheduler, make_repo_preparer
 from framework.utils.yaml_io import load_yaml
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ class CaseRunner:
         self.scheduler = Scheduler(
             max_workers=parallel,
             resource_manager=resource_mgr,
+            repo_preparer=make_repo_preparer(cfg.workspace_dir),
         )
 
     @staticmethod

@@ -33,13 +33,9 @@ class BuildService(YamlRegistry):
     section_key = "builds"
 
     def __init__(
-        self, registry_file: str = "", output_root: str = "",
+        self, registry_file: str, output_root: str,
         repo_service: RepoService | None = None,
     ) -> None:
-        registry_file = self._resolve_registry_file(registry_file, "builds_file")
-        if not output_root:
-            from framework.core.config import get_config
-            output_root = str(Path(get_config().workspace_dir) / "builds")
         super().__init__(registry_file)
         self.output_root = Path(output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
