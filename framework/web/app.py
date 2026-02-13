@@ -1,36 +1,63 @@
-"""轻量级 Web 看板（基于 Flask）
+"""轻量级 Web 看板（基于 Flask）- 主应用
+
+职责:
+- Flask 应用初始化
+- Blueprint 注册
+- 全局错误处理
+- 服务器启动
+
+重构说明:
+- 原 424 行拆分为 8 个模块
+- 7 个新 Blueprint (routes/): core, cases, snapshots, history, utils, results, orchestrate
+- 4 个已有 Blueprint (blueprints/): envs, stimuli, builds, repos
+- 主应用 app.py (106 行): 应用配置和 Blueprint 注册
 
 提供：回归结果查看、依赖包状态、上传依赖包、
       用例表单管理、执行历史、日志检查、资源状态、外部结果录入、
       存储对接、环境管理、激励管理、构建管理、结果管理、编排执行。
 
-Blueprint 拆分:
+Blueprint 架构:
+  # 已有 Blueprint (blueprints/)
   envs_bp     — /api/envs/**     (13 routes)
   stimuli_bp  — /api/stimuli/**  (13 routes)
   builds_bp   — /api/builds/**   (5 routes)
   repos_bp    — /api/repos/**    (6 routes)
+
+  # 新增 Blueprint (routes/)
+  core_bp        — /api/results, /api/deps (3 routes)
+  cases_bp       — /api/cases/**         (5 routes)
+  snapshots_bp   — /api/snapshots/**     (4 routes)
+  history_bp     — /api/history/**       (3 routes)
+  utils_bp       — /api/check-log, storage, resource (5 routes)
+  results_bp     — /api/results/**       (3 routes)
+  orchestrate_bp — /api/orchestrate      (1 route)
 
 启动方式: aieffect dashboard --port 8888
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import re
-from dataclasses import asdict
-from pathlib import Path
-from typing import Any
 
-import yaml
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template
 from werkzeug.exceptions import HTTPException
-from werkzeug.utils import secure_filename
 
+# 已有 Blueprint
 from framework.web.blueprints.builds_bp import builds_bp
 from framework.web.blueprints.envs_bp import envs_bp
 from framework.web.blueprints.repos_bp import repos_bp
 from framework.web.blueprints.stimuli_bp import stimuli_bp
+
+# 新增 Blueprint
+from framework.web.routes import (
+    cases_bp,
+    core_bp,
+    history_bp,
+    orchestrate_bp,
+    results_bp,
+    snapshots_bp,
+    utils_bp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,34 +66,25 @@ MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
-# 注册 Blueprint
+# 注册已有 Blueprint
 app.register_blueprint(envs_bp)
 app.register_blueprint(stimuli_bp)
 app.register_blueprint(builds_bp)
 app.register_blueprint(repos_bp)
 
+# 注册新增 Blueprint
+app.register_blueprint(core_bp)
+app.register_blueprint(cases_bp)
+app.register_blueprint(snapshots_bp)
+app.register_blueprint(history_bp)
+app.register_blueprint(utils_bp)
+app.register_blueprint(results_bp)
+app.register_blueprint(orchestrate_bp)
+
 
 # =========================================================================
-# 全局 JSON 错误处理
+# 全局错误处理
 # =========================================================================
-
-
-def _safe_int(value: Any, default: int, lo: int = 1, hi: int = 10000) -> int:
-    try:
-        n = int(value)
-    except (TypeError, ValueError):
-        return default
-    return max(lo, min(n, hi))
-
-
-_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
-
-
-def _validate_safe_name(value: str, field: str) -> str:
-    value = str(value).strip()
-    if not _SAFE_NAME_RE.match(value):
-        raise ValueError(f"参数 '{field}' 包含非法字符: {value}")
-    return value
 
 
 @app.errorhandler(HTTPException)
@@ -86,337 +104,8 @@ def index():
 
 
 # =========================================================================
-# 核心 API（结果、依赖、上传）
+# 服务器启动
 # =========================================================================
-
-
-@app.route("/api/results")
-def api_results():
-    from framework.core.config import get_config
-    result_dir = Path(get_config().result_dir)
-    results = []
-    if result_dir.exists():
-        for f in sorted(result_dir.glob("*.json")):
-            if f.name.startswith("report"):
-                continue
-            try:
-                results.append(json.loads(f.read_text(encoding="utf-8")))
-            except json.JSONDecodeError:
-                pass
-    from framework.core.models import summarize_statuses
-    return jsonify(summary=summarize_statuses(results), results=results)
-
-
-@app.route("/api/deps")
-def api_deps():
-    from framework.core.config import get_config
-    manifest = Path(get_config().manifest)
-    if not manifest.exists():
-        return jsonify(packages=[])
-    data = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
-    packages = []
-    for name, info in (data.get("packages") or {}).items():
-        if info:
-            packages.append({"name": name, **info})
-    return jsonify(packages=packages)
-
-
-@app.route("/api/deps/upload", methods=["POST"])
-def api_upload_dep():
-    name = request.form.get("name", "")
-    version = request.form.get("version", "")
-    file = request.files.get("file")
-    if not name or not version or not file or not file.filename:
-        return jsonify(error="需要提供 name、version 和 file"), 400
-    try:
-        name = _validate_safe_name(name, "name")
-        version = _validate_safe_name(version, "version")
-    except ValueError as e:
-        return jsonify(error=str(e)), 400
-    safe_name = secure_filename(file.filename)
-    if not safe_name:
-        return jsonify(error="文件名不合法"), 400
-    base_dir = Path("deps/packages").resolve()
-    upload_dir = (base_dir / name / version).resolve()
-    if not str(upload_dir).startswith(str(base_dir)):
-        return jsonify(error="路径不合法"), 400
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    dest = upload_dir / safe_name
-    file.save(str(dest))
-    logger.info("依赖包已上传: %s@%s -> %s", name, version, dest)
-    return jsonify(message=f"已上传 {name}@{version}", path=str(dest))
-
-
-# =========================================================================
-# 用例表单管理 API
-# =========================================================================
-
-
-@app.route("/api/cases", methods=["GET"])
-def api_cases_list():
-    from framework.core.case_manager import CaseManager
-    cm = CaseManager()
-    return jsonify(cases=cm.list_cases(
-        tag=request.args.get("tag"),
-        environment=request.args.get("environment"),
-    ))
-
-
-@app.route("/api/cases/<name>", methods=["GET"])
-def api_cases_get(name: str):
-    from framework.core.case_manager import CaseManager
-    case = CaseManager().get_case(name)
-    if case is None:
-        return jsonify(error="用例不存在"), 404
-    return jsonify(case=case)
-
-
-@app.route("/api/cases", methods=["POST"])
-def api_cases_add():
-    from framework.core.case_manager import CaseManager
-    body = request.get_json(silent=True) or {}
-    name = body.get("name", "")
-    cmd = body.get("cmd", "")
-    if not name or not cmd:
-        return jsonify(error="需要提供 name 和 cmd"), 400
-    case = CaseManager().add_case(
-        name, cmd,
-        description=body.get("description", ""),
-        tags=body.get("tags", []),
-        timeout=body.get("timeout", 3600),
-        environments=body.get("environments", []),
-    )
-    return jsonify(message=f"用例已保存: {name}", case={"name": name, **case})
-
-
-@app.route("/api/cases/<name>", methods=["PUT"])
-def api_cases_update(name: str):
-    from framework.core.case_manager import CaseManager
-    body = request.get_json(silent=True) or {}
-    updated = CaseManager().update_case(name, **body)
-    if updated is None:
-        return jsonify(error="用例不存在"), 404
-    return jsonify(message=f"用例已更新: {name}", case=updated)
-
-
-@app.route("/api/cases/<name>", methods=["DELETE"])
-def api_cases_delete(name: str):
-    from framework.core.case_manager import CaseManager
-    if CaseManager().remove_case(name):
-        return jsonify(message=f"用例已删除: {name}")
-    return jsonify(error="用例不存在"), 404
-
-
-# =========================================================================
-# 快照 / 历史 / 日志 / 资源 / 存储
-# =========================================================================
-
-
-@app.route("/api/snapshots", methods=["GET"])
-def api_snapshots_list():
-    from framework.core.snapshot import SnapshotManager
-    return jsonify(snapshots=SnapshotManager().list_snapshots())
-
-
-@app.route("/api/snapshots", methods=["POST"])
-def api_snapshots_create():
-    from framework.core.snapshot import SnapshotManager
-    body = request.get_json(silent=True) or {}
-    snap = SnapshotManager().create(
-        description=body.get("description", ""),
-        snapshot_id=body.get("id"),
-    )
-    return jsonify(message=f"快照已创建: {snap['id']}", snapshot=snap)
-
-
-@app.route("/api/snapshots/<snapshot_id>", methods=["GET"])
-def api_snapshots_get(snapshot_id: str):
-    from framework.core.snapshot import SnapshotManager
-    snap = SnapshotManager().get(snapshot_id)
-    if snap is None:
-        return jsonify(error="快照不存在"), 404
-    return jsonify(snapshot=snap)
-
-
-@app.route("/api/snapshots/<snapshot_id>/restore", methods=["POST"])
-def api_snapshots_restore(snapshot_id: str):
-    from framework.core.snapshot import SnapshotManager
-    if SnapshotManager().restore(snapshot_id):
-        return jsonify(message=f"快照已恢复: {snapshot_id}")
-    return jsonify(error="快照不存在"), 404
-
-
-@app.route("/api/history", methods=["GET"])
-def api_history_list():
-    from framework.core.history import HistoryManager
-    return jsonify(records=HistoryManager().query(
-        suite=request.args.get("suite"),
-        environment=request.args.get("environment"),
-        case_name=request.args.get("case_name"),
-        limit=_safe_int(request.args.get("limit", 50), default=50),
-    ))
-
-
-@app.route("/api/history/case/<case_name>", methods=["GET"])
-def api_history_case(case_name: str):
-    from framework.core.history import HistoryManager
-    return jsonify(summary=HistoryManager().case_summary(case_name))
-
-
-@app.route("/api/history/submit", methods=["POST"])
-def api_history_submit():
-    from framework.core.history import HistoryManager
-    body = request.get_json(silent=True) or {}
-    if "suite" not in body or "results" not in body:
-        return jsonify(error="需要提供 suite 和 results"), 400
-    try:
-        entry = HistoryManager().submit_external(body)
-    except ValueError as e:
-        return jsonify(error=str(e)), 400
-    return jsonify(message="执行结果已录入", entry=entry)
-
-
-@app.route("/api/check-log", methods=["POST"])
-def api_check_log():
-    from framework.core.log_checker import LogChecker
-    rules_file = request.args.get("rules", "configs/log_rules.yml")
-    checker = LogChecker(rules_file=rules_file)
-    file = request.files.get("file")
-    text = None
-    source = ""
-    if file and file.filename:
-        text = file.read().decode(errors="replace")
-        source = secure_filename(file.filename)
-    else:
-        body = request.get_json(silent=True) or {}
-        text = body.get("text", "")
-        source = body.get("source", "api_input")
-    if not text:
-        return jsonify(error="需要提供日志文件或 text 字段"), 400
-    report = checker.check_text(text, source=source)
-    return jsonify(
-        success=report.success,
-        log_source=report.log_source,
-        total_rules=report.total_rules,
-        passed_rules=report.passed_rules,
-        failed_rules=report.failed_rules,
-        details=[asdict(d) for d in report.details],
-    )
-
-
-@app.route("/api/resource", methods=["GET"])
-def api_resource_status():
-    from framework.core.resource import ResourceManager
-    return jsonify(asdict(ResourceManager().status()))
-
-
-@app.route("/api/storage/<namespace>", methods=["GET"])
-def api_storage_list(namespace: str):
-    try:
-        namespace = _validate_safe_name(namespace, "namespace")
-    except ValueError as e:
-        return jsonify(error=str(e)), 400
-    from framework.core.storage import create_storage
-    return jsonify(namespace=namespace, keys=create_storage().list_keys(namespace))
-
-
-@app.route("/api/storage/<namespace>/<key>", methods=["GET"])
-def api_storage_get(namespace: str, key: str):
-    try:
-        namespace = _validate_safe_name(namespace, "namespace")
-        key = _validate_safe_name(key, "key")
-    except ValueError as e:
-        return jsonify(error=str(e)), 400
-    from framework.core.storage import create_storage
-    data = create_storage().get(namespace, key)
-    if data is None:
-        return jsonify(error="数据不存在"), 404
-    return jsonify(data=data)
-
-
-@app.route("/api/storage/<namespace>/<key>", methods=["PUT"])
-def api_storage_put(namespace: str, key: str):
-    try:
-        namespace = _validate_safe_name(namespace, "namespace")
-        key = _validate_safe_name(key, "key")
-    except ValueError as e:
-        return jsonify(error=str(e)), 400
-    from framework.core.storage import create_storage
-    body = request.get_json(silent=True) or {}
-    path = create_storage().put(namespace, key, body)
-    return jsonify(message="已存储", path=path)
-
-
-# =========================================================================
-# 结果管理 API（增强）
-# =========================================================================
-
-
-@app.route("/api/results/compare", methods=["GET"])
-def api_results_compare():
-    from framework.services.result_service import ResultService
-    run_a = request.args.get("run_a", "")
-    run_b = request.args.get("run_b", "")
-    if not run_a or not run_b:
-        return jsonify(error="需要提供 run_a 和 run_b"), 400
-    return jsonify(ResultService().compare_runs(run_a, run_b))
-
-
-@app.route("/api/results/export", methods=["POST"])
-def api_results_export():
-    from framework.services.result_service import ResultService
-    body = request.get_json(silent=True) or {}
-    path = ResultService().export(fmt=body.get("format", "html"))
-    return jsonify(message="报告已生成", path=path)
-
-
-@app.route("/api/results/upload", methods=["POST"])
-def api_results_upload():
-    from framework.services.result_service import ResultService, StorageConfig
-    body = request.get_json(silent=True) or {}
-    cfg = StorageConfig.from_dict(body.get("storage", {}))
-    result = ResultService().upload(config=cfg, run_id=body.get("run_id", ""))
-    return jsonify(result)
-
-
-# =========================================================================
-# 编排执行 API
-# =========================================================================
-
-
-@app.route("/api/orchestrate", methods=["POST"])
-def api_orchestrate():
-    from framework.services.execution_orchestrator import (
-        ExecutionOrchestrator,
-        OrchestrationPlan,
-    )
-    body = request.get_json(silent=True) or {}
-    plan = OrchestrationPlan(
-        suite=body.get("suite", "default"),
-        config_path=body.get("config_path", "configs/default.yml"),
-        parallel=body.get("parallel", 1),
-        build_env_name=body.get("build_env_name", ""),
-        exe_env_name=body.get("exe_env_name", ""),
-        environment=body.get("environment", ""),
-        repo_names=body.get("repo_names", []),
-        repo_ref_overrides=body.get("repo_ref_overrides", {}),
-        build_names=body.get("build_names", []),
-        stimulus_names=body.get("stimulus_names", []),
-        params=body.get("params", {}),
-        snapshot_id=body.get("snapshot_id", ""),
-        case_names=body.get("case_names", []),
-    )
-    report = ExecutionOrchestrator().run(plan)
-    sr = report.suite_result
-    return jsonify(
-        success=report.success,
-        run_id=report.run_id,
-        steps=report.steps,
-        suite_result={
-            "total": sr.total, "passed": sr.passed,
-            "failed": sr.failed, "errors": sr.errors,
-        } if sr else None,
-    )
 
 
 def run_server(port: int = 8888, debug: bool = False, host: str = "127.0.0.1") -> None:
