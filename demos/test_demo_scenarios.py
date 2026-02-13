@@ -1,113 +1,127 @@
-"""参数化验证场景 Demo — 用例 A & B
+"""参数化验证 Demo — 模板 + inline 覆盖
 
-场景由 scenarios.yml 驱动，通过 conftest fixture 注入 mock 服务。
-每个测试只关注「验证什么」，不关注「怎么注册」。
+YAML 模板 (local / remote) 提供基线参数，
+测试用例只写差异部分:
+
+    make_plan("local", branch="br_fix", cases=["tc1"])
 
 运行:
-  pytest demos/ -v                   # 全部
-  pytest demos/ -k "smoke" -v        # smoke
-  pytest demos/ -k "remote" -v       # 远程场景(用例B)
+  pytest demos/ -v
+  pytest demos/ -k "timing" -v
+  pytest demos/ -k "remote" -v
 """
 
 from __future__ import annotations
 
 import pytest
 
-from demos.conftest import scenario_params
-from framework.services.execution_orchestrator import (
-    ExecutionOrchestrator,
-    OrchestrationPlan,
-)
+from framework.services.execution_orchestrator import ExecutionOrchestrator
+
+# =========================================================================
+# 用例 A: 本地 PC 验证
+# =========================================================================
 
 
-def _plan_from_cfg(cfg: dict) -> OrchestrationPlan:
-    """从 YAML 场景配置构建 OrchestrationPlan"""
-    p = cfg["plan"]
-    return OrchestrationPlan(
-        suite=p["suite"],
-        parallel=p.get("parallel", 1),
-        build_env_name=p.get("build_env_name", ""),
-        exe_env_name=p.get("exe_env_name", ""),
-        repo_names=p.get("repo_names", []),
-        repo_ref_overrides=p.get("repo_ref_overrides", {}),
-        build_names=p.get("build_names", []),
-        snapshot_id=cfg.get("snapshot_id", ""),
-        case_names=p.get("case_names", []),
-        params={"VERSION": cfg.get("snapshot_id", "")},
-    )
+class TestLocalSmoke:
+    """本地 PC + EDA 仿真 smoke 场景"""
 
-
-class TestOrchestrate:
-    """核心: 7 步编排执行"""
-
-    @pytest.mark.parametrize("cfg", scenario_params())
-    def test_full_pipeline(self, mock_container, cfg: dict):
-        """编排执行完成且成功"""
-        plan = _plan_from_cfg(cfg)
+    @pytest.mark.parametrize("branch,cases", [
+        ("br_fix_timing_closure", ["sanity_check", "basic_func"]),
+        ("br_fix_clock_gating",   ["sanity_check"]),
+    ])
+    def test_branch_smoke(self, mock_container, make_plan, branch, cases):
+        plan = make_plan("local", branch=branch, cases=cases)
         report = ExecutionOrchestrator(container=mock_container).run(plan)
 
         assert report.success is True
         assert report.run_id != ""
 
-    @pytest.mark.parametrize("cfg", scenario_params())
-    def test_all_steps_executed(self, mock_container, cfg: dict):
-        """7 步全部执行"""
-        plan = _plan_from_cfg(cfg)
+    def test_default_smoke(self, mock_container, make_plan):
+        """模板默认值即可跑通"""
+        plan = make_plan("local")
+        report = ExecutionOrchestrator(container=mock_container).run(plan)
+        assert report.success is True
+
+
+class TestLocalRegression:
+    """本地 PC 全量回归"""
+
+    @pytest.mark.parametrize("parallel", [4, 8, 16])
+    def test_parallel_scaling(self, mock_container, make_plan, parallel):
+        plan = make_plan("local",
+                         branch="br_perf_optimization",
+                         suite="regression",
+                         parallel=parallel,
+                         cases=[])  # 空 = 全部用例
+        report = ExecutionOrchestrator(container=mock_container).run(plan)
+        assert report.success is True
+
+    @pytest.mark.parametrize("snapshot", ["20250206B003", "20250210B001"])
+    def test_snapshot_versions(self, mock_container, make_plan, snapshot):
+        plan = make_plan("local", snapshot_id=snapshot)
+        assert plan.snapshot_id == snapshot
+
+
+# =========================================================================
+# 用例 B: 远程服务器执行
+# =========================================================================
+
+
+class TestRemote:
+    """远程服务器 B 编排执行"""
+
+    @pytest.mark.parametrize("branch,cases", [
+        ("br_fix_timing_closure", ["sanity_check", "basic_func"]),
+        ("br_dft_scan_chain",     ["scan_test_1", "scan_test_2"]),
+    ])
+    def test_remote_execute(self, mock_container, make_plan, branch, cases):
+        plan = make_plan("remote", branch=branch, cases=cases)
+        report = ExecutionOrchestrator(container=mock_container).run(plan)
+
+        assert report.success is True
+        mock_container.env.release.assert_called_once()
+
+    def test_remote_regression(self, mock_container, make_plan):
+        plan = make_plan("remote", suite="regression", parallel=8, cases=[])
+        report = ExecutionOrchestrator(container=mock_container).run(plan)
+        assert report.success is True
+
+
+# =========================================================================
+# 通用: 编排步骤 & Plan 属性
+# =========================================================================
+
+
+class TestSteps:
+    """验证 7 步编排的完整性"""
+
+    @pytest.mark.parametrize("tpl", ["local", "remote"])
+    def test_all_steps_executed(self, mock_container, make_plan, tpl):
+        plan = make_plan(tpl, branch="br_fix_timing_closure")
         report = ExecutionOrchestrator(container=mock_container).run(plan)
 
         steps = {s["step"] for s in report.steps}
         assert {"provision_env", "checkout", "build", "execute", "collect", "teardown"} <= steps
 
-    @pytest.mark.parametrize("cfg", scenario_params())
-    def test_teardown_releases_env(self, mock_container, cfg: dict):
-        """环境一定被释放"""
-        plan = _plan_from_cfg(cfg)
+    @pytest.mark.parametrize("tpl", ["local", "remote"])
+    def test_teardown_always_releases(self, mock_container, make_plan, tpl):
+        plan = make_plan(tpl)
         ExecutionOrchestrator(container=mock_container).run(plan)
-
         mock_container.env.release.assert_called_once()
 
 
-class TestPlanParams:
-    """验证编排计划的参数传递"""
+class TestPlanConversion:
+    """Plan → RunRequest 转换"""
 
-    @pytest.mark.parametrize("cfg", scenario_params())
-    def test_snapshot_bound(self, cfg: dict):
-        """快照 ID 绑定正确"""
-        plan = _plan_from_cfg(cfg)
-        assert plan.snapshot_id == cfg["snapshot_id"]
-
-    @pytest.mark.parametrize("cfg", scenario_params())
-    def test_branch_override(self, cfg: dict):
-        """分支覆盖正确传递"""
-        plan = _plan_from_cfg(cfg)
-        overrides = cfg["plan"].get("repo_ref_overrides", {})
-        for repo, branch in overrides.items():
-            assert plan.repo_ref_overrides[repo] == branch
-
-    @pytest.mark.parametrize("cfg", scenario_params())
-    def test_run_request_conversion(self, cfg: dict):
-        """Plan → RunRequest 转换正确"""
-        plan = _plan_from_cfg(cfg)
+    @pytest.mark.parametrize("tpl,expected_env", [
+        ("local",  "sim_eda"),
+        ("remote", "sim_eda_remote"),
+    ])
+    def test_env_mapping(self, make_plan, tpl, expected_env):
+        plan = make_plan(tpl)
         req = plan.to_run_request()
-        assert req.suite == cfg["plan"]["suite"]
-        assert req.environment == cfg["plan"].get("exe_env_name", "")
+        assert req.environment == expected_env
 
-
-class TestUpload:
-    """结果上传配置验证"""
-
-    @pytest.mark.parametrize("cfg", scenario_params())
-    def test_upload_config_present(self, cfg: dict):
-        """上传配置存在"""
-        upload = cfg.get("upload", {})
-        assert upload.get("type") in ("rsync", "api", "local", None)
-
-    @pytest.mark.parametrize(
-        "cfg",
-        [c for _, c in __import__("demos.conftest", fromlist=["ALL_SCENARIOS"]).ALL_SCENARIOS
-         if c.get("export")],
-        ids=lambda c: c.get("plan", {}).get("suite", "?"),
-    )
-    def test_export_format(self, cfg: dict):
-        """用例B: 导出格式配置正确"""
-        assert cfg["export"]["format"] in ("html", "json", "junit")
+    def test_branch_override_in_plan(self, make_plan):
+        plan = make_plan("local", branch="br_new_feature")
+        assert plan.repo_ref_overrides["rtl_core"] == "br_new_feature"
