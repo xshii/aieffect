@@ -34,6 +34,18 @@ class DependencyError(AIEffectError):
     code = "DEPENDENCY_ERROR"
 
 
+class ExecutionError(AIEffectError):
+    """执行/运行时故障（命令失败、子进程异常等）"""
+
+    code = "EXECUTION_ERROR"
+
+
+class DataError(AIEffectError):
+    """数据解析/序列化失败（JSON/YAML/校验和不匹配等）"""
+
+    code = "DATA_ERROR"
+
+
 class ValidationError(AIEffectError):
     """输入数据校验失败"""
 

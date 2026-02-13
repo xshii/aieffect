@@ -46,9 +46,7 @@ class StimulusService(YamlRegistry):
         self, registry_file: str = "", artifact_dir: str = "",
         repo_service: RepoService | None = None,
     ) -> None:
-        if not registry_file:
-            from framework.core.config import get_config
-            registry_file = getattr(get_config(), "stimuli_file", "data/stimuli.yml")
+        registry_file = self._resolve_registry_file(registry_file, "stimuli_file")
         if not artifact_dir:
             from framework.core.config import get_config
             artifact_dir = str(Path(get_config().workspace_dir) / "stimuli")
@@ -70,6 +68,54 @@ class StimulusService(YamlRegistry):
     # =====================================================================
     # 1. 激励管理 — CRUD
     # =====================================================================
+
+    @staticmethod
+    def create_spec(data: dict[str, Any]) -> StimulusSpec:
+        """从字典创建 StimulusSpec（CLI/Web 共用工厂）"""
+        repo = None
+        if data.get("repo"):
+            r = data["repo"]
+            repo = RepoSpec(
+                name=r.get("name", data.get("name", "")),
+                url=r.get("url", ""), ref=r.get("ref", "main"),
+            )
+        return StimulusSpec(
+            name=data.get("name", ""),
+            source_type=data.get("source_type", "repo"),
+            repo=repo,
+            generator_cmd=data.get("generator_cmd", ""),
+            storage_key=data.get("storage_key", ""),
+            external_url=data.get("external_url", ""),
+            description=data.get("description", ""),
+            params=data.get("params", {}),
+            template=data.get("template", ""),
+        )
+
+    @staticmethod
+    def create_result_stimulus_spec(data: dict[str, Any]) -> ResultStimulusSpec:
+        """从字典创建 ResultStimulusSpec（CLI/Web 共用工厂）"""
+        return ResultStimulusSpec(
+            name=data.get("name", ""),
+            source_type=data.get("source_type", ResultStimulusType.API),
+            api_url=data.get("api_url", ""),
+            api_token=data.get("api_token", ""),
+            binary_path=data.get("binary_path", ""),
+            parser_cmd=data.get("parser_cmd", ""),
+            description=data.get("description", ""),
+        )
+
+    @staticmethod
+    def create_trigger_spec(data: dict[str, Any]) -> TriggerSpec:
+        """从字典创建 TriggerSpec（CLI/Web 共用工厂）"""
+        return TriggerSpec(
+            name=data.get("name", ""),
+            trigger_type=data.get("trigger_type", TriggerType.API),
+            api_url=data.get("api_url", ""),
+            api_token=data.get("api_token", ""),
+            binary_cmd=data.get("binary_cmd", ""),
+            stimulus_name=data.get("stimulus_name", ""),
+            description=data.get("description", ""),
+        )
 
     def register(self, spec: StimulusSpec) -> dict[str, Any]:
         """注册激励源"""

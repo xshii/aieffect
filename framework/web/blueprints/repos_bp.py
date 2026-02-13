@@ -6,6 +6,8 @@ from dataclasses import asdict
 
 from flask import Blueprint, Response, jsonify, request
 
+from framework.web.responses import bad_request, not_found
+
 repos_bp = Blueprint("repos", __name__, url_prefix="/api/repos")
 
 
@@ -23,40 +25,25 @@ def list_all() -> Response:
 def get(name: str) -> tuple[Response, int] | Response:
     spec = _repo_svc().get(name)
     if spec is None:
-        return jsonify(error="代码仓不存在"), 404
+        return not_found("代码仓")
     return jsonify(repo=asdict(spec))
 
 
 @repos_bp.route("", methods=["POST"])
 def add() -> Response:
-    from framework.core.models import RepoSpec
     body = request.get_json(silent=True) or {}
-    name = body.get("name", "")
-    if not name:
-        return jsonify(error="需要提供 name"), 400
-    spec = RepoSpec(
-        name=name,
-        source_type=body.get("source_type", "git"),
-        url=body.get("url", ""),
-        ref=body.get("ref", "main"),
-        path=body.get("path", ""),
-        tar_path=body.get("tar_path", ""),
-        tar_url=body.get("tar_url", ""),
-        api_url=body.get("api_url", ""),
-        api_token=body.get("api_token", ""),
-        setup_cmd=body.get("setup_cmd", ""),
-        build_cmd=body.get("build_cmd", ""),
-        deps=body.get("deps", []),
-    )
-    entry = _repo_svc().register(spec)
-    return jsonify(message=f"代码仓已注册: {name}", repo=entry)
+    if not body.get("name"):
+        return bad_request("需要提供 name")
+    svc = _repo_svc()
+    entry = svc.register(svc.create_spec(body))
+    return jsonify(message=f"代码仓已注册: {body['name']}", repo=entry)
 
 
 @repos_bp.route("/<name>", methods=["DELETE"])
 def delete(name: str) -> tuple[Response, int] | Response:
     if _repo_svc().remove(name):
         return jsonify(message=f"代码仓已删除: {name}")
-    return jsonify(error="代码仓不存在"), 404
+    return not_found("代码仓")
 
 
 @repos_bp.route("/<name>/checkout", methods=["POST"])

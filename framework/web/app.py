@@ -28,6 +28,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 
 from framework.services.container import get_container
+from framework.web.responses import bad_request, not_found
 from framework.web.blueprints.builds_bp import builds_bp
 from framework.web.blueprints.envs_bp import envs_bp
 from framework.web.blueprints.repos_bp import repos_bp
@@ -133,19 +134,19 @@ def api_upload_dep():
     version = request.form.get("version", "")
     file = request.files.get("file")
     if not name or not version or not file or not file.filename:
-        return jsonify(error="需要提供 name、version 和 file"), 400
+        return bad_request("需要提供 name、version 和 file")
     try:
         name = _validate_safe_name(name, "name")
         version = _validate_safe_name(version, "version")
     except ValueError as e:
-        return jsonify(error=str(e)), 400
+        return bad_request(str(e))
     safe_name = secure_filename(file.filename)
     if not safe_name:
-        return jsonify(error="文件名不合法"), 400
+        return bad_request("文件名不合法")
     base_dir = Path("deps/packages").resolve()
     upload_dir = (base_dir / name / version).resolve()
     if not str(upload_dir).startswith(str(base_dir)):
-        return jsonify(error="路径不合法"), 400
+        return bad_request("路径不合法")
     upload_dir.mkdir(parents=True, exist_ok=True)
     dest = upload_dir / safe_name
     file.save(str(dest))
@@ -170,7 +171,7 @@ def api_cases_list():
 def api_cases_get(name: str):
     case = _svc().cases.get_case(name)
     if case is None:
-        return jsonify(error="用例不存在"), 404
+        return not_found("用例")
     return jsonify(case=case)
 
 
@@ -180,7 +181,7 @@ def api_cases_add():
     name = body.get("name", "")
     cmd = body.get("cmd", "")
     if not name or not cmd:
-        return jsonify(error="需要提供 name 和 cmd"), 400
+        return bad_request("需要提供 name 和 cmd")
     case = _svc().cases.add_case(
         name, cmd,
         description=body.get("description", ""),
@@ -196,7 +197,7 @@ def api_cases_update(name: str):
     body = request.get_json(silent=True) or {}
     updated = _svc().cases.update_case(name, **body)
     if updated is None:
-        return jsonify(error="用例不存在"), 404
+        return not_found("用例")
     return jsonify(message=f"用例已更新: {name}", case=updated)
 
 
@@ -204,7 +205,7 @@ def api_cases_update(name: str):
 def api_cases_delete(name: str):
     if _svc().cases.remove_case(name):
         return jsonify(message=f"用例已删除: {name}")
-    return jsonify(error="用例不存在"), 404
+    return not_found("用例")
 
 
 # =========================================================================
@@ -231,7 +232,7 @@ def api_snapshots_create():
 def api_snapshots_get(snapshot_id: str):
     snap = _svc().snapshots.get(snapshot_id)
     if snap is None:
-        return jsonify(error="快照不存在"), 404
+        return not_found("快照")
     return jsonify(snapshot=snap)
 
 
@@ -239,7 +240,7 @@ def api_snapshots_get(snapshot_id: str):
 def api_snapshots_restore(snapshot_id: str):
     if _svc().snapshots.restore(snapshot_id):
         return jsonify(message=f"快照已恢复: {snapshot_id}")
-    return jsonify(error="快照不存在"), 404
+    return not_found("快照")
 
 
 @app.route("/api/history", methods=["GET"])
@@ -261,11 +262,11 @@ def api_history_case(case_name: str):
 def api_history_submit():
     body = request.get_json(silent=True) or {}
     if "suite" not in body or "results" not in body:
-        return jsonify(error="需要提供 suite 和 results"), 400
+        return bad_request("需要提供 suite 和 results")
     try:
         entry = _svc().history.submit_external(body)
     except ValueError as e:
-        return jsonify(error=str(e)), 400
+        return bad_request(str(e))
     return jsonify(message="执行结果已录入", entry=entry)
 
 
@@ -285,7 +286,7 @@ def api_check_log():
         text = body.get("text", "")
         source = body.get("source", "api_input")
     if not text:
-        return jsonify(error="需要提供日志文件或 text 字段"), 400
+        return bad_request("需要提供日志文件或 text 字段")
     report = checker.check_text(text, source=source)
     return jsonify(
         success=report.success,
@@ -307,7 +308,7 @@ def api_storage_list(namespace: str):
     try:
         namespace = _validate_safe_name(namespace, "namespace")
     except ValueError as e:
-        return jsonify(error=str(e)), 400
+        return bad_request(str(e))
     from framework.core.storage import create_storage
     return jsonify(namespace=namespace, keys=create_storage().list_keys(namespace))
 
@@ -318,11 +319,11 @@ def api_storage_get(namespace: str, key: str):
         namespace = _validate_safe_name(namespace, "namespace")
         key = _validate_safe_name(key, "key")
     except ValueError as e:
-        return jsonify(error=str(e)), 400
+        return bad_request(str(e))
     from framework.core.storage import create_storage
     data = create_storage().get(namespace, key)
     if data is None:
-        return jsonify(error="数据不存在"), 404
+        return not_found("数据")
     return jsonify(data=data)
 
 
@@ -332,7 +333,7 @@ def api_storage_put(namespace: str, key: str):
         namespace = _validate_safe_name(namespace, "namespace")
         key = _validate_safe_name(key, "key")
     except ValueError as e:
-        return jsonify(error=str(e)), 400
+        return bad_request(str(e))
     from framework.core.storage import create_storage
     body = request.get_json(silent=True) or {}
     path = create_storage().put(namespace, key, body)
@@ -349,7 +350,7 @@ def api_results_compare():
     run_a = request.args.get("run_a", "")
     run_b = request.args.get("run_b", "")
     if not run_a or not run_b:
-        return jsonify(error="需要提供 run_a 和 run_b"), 400
+        return bad_request("需要提供 run_a 和 run_b")
     return jsonify(_svc().result.compare_runs(run_a, run_b))
 
 
@@ -410,5 +411,11 @@ def api_orchestrate():
 
 
 def run_server(port: int = 8888, debug: bool = False, host: str = "127.0.0.1") -> None:
+    import os
+    from framework.utils.logger import setup_logging
+    setup_logging(
+        level=os.getenv("AIEFFECT_LOG_LEVEL", "INFO"),
+        json_output=os.getenv("AIEFFECT_LOG_JSON", "") == "1",
+    )
     logger.info("aieffect 看板已启动: http://%s:%d", host, port)
     app.run(host=host, port=port, debug=debug)

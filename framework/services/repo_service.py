@@ -37,9 +37,7 @@ class RepoService(YamlRegistry):
     section_key = "repos"
 
     def __init__(self, registry_file: str = "", workspace_root: str = "") -> None:
-        if not registry_file:
-            from framework.core.config import get_config
-            registry_file = getattr(get_config(), "repos_file", "data/repos.yml")
+        registry_file = self._resolve_registry_file(registry_file, "repos_file")
         if not workspace_root:
             from framework.core.config import get_config
             workspace_root = get_config().workspace_dir
@@ -49,6 +47,21 @@ class RepoService(YamlRegistry):
         self._workspace_cache: dict[tuple[str, str], RepoWorkspace] = {}
 
     # ---- 注册 / CRUD ----
+
+    @staticmethod
+    def create_spec(data: dict[str, Any]) -> RepoSpec:
+        """从字典创建 RepoSpec（CLI/Web 共用工厂）"""
+        return RepoSpec(
+            name=data.get("name", ""),
+            source_type=data.get("source_type", "git"),
+            url=data.get("url", ""), ref=data.get("ref", "main"),
+            path=data.get("path", ""), tar_path=data.get("tar_path", ""),
+            tar_url=data.get("tar_url", ""), api_url=data.get("api_url", ""),
+            api_token=data.get("api_token", ""),
+            setup_cmd=data.get("setup_cmd", ""),
+            build_cmd=data.get("build_cmd", ""),
+            deps=data.get("deps", []),
+        )
 
     def register(self, spec: RepoSpec) -> dict[str, Any]:
         """注册一个代码仓"""

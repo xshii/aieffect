@@ -19,12 +19,30 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from abc import ABC, abstractmethod
+
 logger = logging.getLogger(__name__)
 
 SECONDS_PER_DAY = 86400
 
 
-class LocalStorage:
+class Storage(ABC):
+    """存储后端抽象基类 — LocalStorage / RemoteStorage 的统一接口"""
+
+    @abstractmethod
+    def put(self, namespace: str, key: str, data: dict) -> str:
+        """存储数据，返回存储路径"""
+
+    @abstractmethod
+    def get(self, namespace: str, key: str) -> dict[str, object] | None:
+        """读取数据"""
+
+    @abstractmethod
+    def list_keys(self, namespace: str) -> list[str]:
+        """列出命名空间下的所有 key"""
+
+
+class LocalStorage(Storage):
     """本地文件系统存储"""
 
     def __init__(self, base_dir: str = "") -> None:
@@ -81,7 +99,7 @@ class LocalStorage:
         return False
 
 
-class RemoteStorage:
+class RemoteStorage(Storage):
     """远端 REST API 存储，带本地缓存
 
     缓存策略：写入时先存本地，读取优先走本地缓存。
@@ -172,7 +190,7 @@ class RemoteStorage:
         return {"forwarded": forwarded, "failed": failed}
 
 
-def create_storage(config: dict | None = None) -> LocalStorage | RemoteStorage:
+def create_storage(config: dict | None = None) -> Storage:
     """根据配置创建存储后端"""
     if config is None:
         config = {}

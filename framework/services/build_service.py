@@ -36,9 +36,7 @@ class BuildService(YamlRegistry):
         self, registry_file: str = "", output_root: str = "",
         repo_service: RepoService | None = None,
     ) -> None:
-        if not registry_file:
-            from framework.core.config import get_config
-            registry_file = getattr(get_config(), "builds_file", "data/builds.yml")
+        registry_file = self._resolve_registry_file(registry_file, "builds_file")
         if not output_root:
             from framework.core.config import get_config
             output_root = str(Path(get_config().workspace_dir) / "builds")
@@ -55,6 +53,17 @@ class BuildService(YamlRegistry):
         return RepoService()
 
     # ---- 注册 / CRUD ----
+
+    @staticmethod
+    def create_spec(data: dict[str, Any]) -> BuildSpec:
+        """从字典创建 BuildSpec（CLI/Web 共用工厂）"""
+        return BuildSpec(
+            name=data.get("name", ""), repo_name=data.get("repo_name", ""),
+            setup_cmd=data.get("setup_cmd", ""),
+            build_cmd=data.get("build_cmd", ""),
+            clean_cmd=data.get("clean_cmd", ""),
+            output_dir=data.get("output_dir", ""),
+        )
 
     def register(self, spec: BuildSpec) -> dict[str, str]:
         """注册构建配置"""

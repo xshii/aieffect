@@ -31,6 +31,14 @@ class YamlRegistry:
         self.registry_file = Path(registry_file)
         self._data: dict[str, Any] = load_yaml(self.registry_file)
 
+    @staticmethod
+    def _resolve_registry_file(registry_file: str, config_key: str) -> str:
+        """从 Config 解析注册表文件路径（消除各子类的重复 getattr 模式）"""
+        if registry_file:
+            return registry_file
+        from framework.core.config import get_config
+        return str(getattr(get_config(), config_key))
+
     def _section(self) -> dict[str, dict[str, Any]]:
         """获取当前 section 字典（自动创建）"""
         result: dict[str, dict[str, Any]] = self._data.setdefault(self.section_key, {})

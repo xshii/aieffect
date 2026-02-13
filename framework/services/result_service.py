@@ -22,6 +22,7 @@ from typing import Any
 
 from framework.core.history import HistoryManager
 from framework.core.models import SuiteResult, summarize_statuses
+from framework.core.pipeline import save_results
 
 logger = logging.getLogger(__name__)
 
@@ -133,12 +134,9 @@ class ResultService:
         return str(entry["run_id"])
 
     def _persist_results(self, suite_result: SuiteResult) -> None:
-        for r in suite_result.results:
-            f = self.result_dir / f"{r.name}.json"
-            f.write_text(
-                json.dumps(asdict(r), indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
+        """委托给 pipeline.save_results，消除重复的 JSON 写入逻辑"""
+        if suite_result.results:
+            save_results(suite_result.results, output_dir=str(self.result_dir))
 
     @staticmethod
     def _collect_context_dict(

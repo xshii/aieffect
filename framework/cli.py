@@ -4,12 +4,14 @@
 消除散落的直接 import 和裸构造。
 """
 
+import os
 from typing import Any
 
 import click
 
 from framework import __version__
 from framework.services.container import get_container
+from framework.utils.logger import setup_logging
 from framework.utils.yaml_io import load_yaml, save_yaml
 
 
@@ -22,6 +24,10 @@ def _svc() -> Any:
 @click.version_option(version=__version__)
 def main() -> None:
     """aieffect - AI 芯片验证效率集成平台"""
+    setup_logging(
+        level=os.getenv("AIEFFECT_LOG_LEVEL", "INFO"),
+        json_output=os.getenv("AIEFFECT_LOG_JSON", "") == "1",
+    )
 
 
 # =========================================================================
@@ -438,16 +444,8 @@ def repo_list() -> None:
 @click.option("--dep", multiple=True, help="关联依赖包（可多次）")
 def repo_add(**kwargs: Any) -> None:
     """注册代码仓（支持 git/tar/api 三种来源）"""
-    from framework.core.models import RepoSpec
-    spec = RepoSpec(
-        name=kwargs["name"], source_type=kwargs.get("source_type", "git"),
-        url=kwargs.get("url", ""), ref=kwargs.get("ref", "main"),
-        path=kwargs.get("path", ""), tar_path=kwargs.get("tar_path", ""),
-        tar_url=kwargs.get("tar_url", ""), api_url=kwargs.get("api_url", ""),
-        setup_cmd=kwargs.get("setup_cmd", ""), build_cmd=kwargs.get("build_cmd", ""),
-        deps=list(kwargs.get("dep", ())),
-    )
-    _svc().repo.register(spec)
+    kwargs["deps"] = list(kwargs.pop("dep", ()))
+    _svc().repo.register(_svc().repo.create_spec(kwargs))
     click.echo(f"代码仓已注册: {kwargs['name']} (type={kwargs.get('source_type', 'git')})")
 
 
@@ -524,16 +522,14 @@ def env_svc_list() -> None:
 @click.option("--var", multiple=True, help="环境变量 key=value（可多次）")
 def env_add_build(**kwargs: Any) -> None:
     """注册构建环境"""
-    from framework.core.models import BuildEnvSpec
-    variables = _parse_kv_pairs(kwargs.get("var", ()))
-    spec = BuildEnvSpec(
-        name=kwargs["name"], build_env_type=kwargs.get("env_type", "local"),
-        description=kwargs.get("desc", ""), work_dir=kwargs.get("work_dir", ""),
-        variables=variables, host=kwargs.get("host", ""),
-        port=kwargs.get("port", 22), user=kwargs.get("user", ""),
-        key_path=kwargs.get("key_path", ""),
-    )
-    _svc().env.register_build_env(spec)
+    data = {
+        "name": kwargs["name"], "build_env_type": kwargs.get("env_type", "local"),
+        "description": kwargs.get("desc", ""), "work_dir": kwargs.get("work_dir", ""),
+        "variables": _parse_kv_pairs(kwargs.get("var", ())),
+        "host": kwargs.get("host", ""), "port": kwargs.get("port", 22),
+        "user": kwargs.get("user", ""), "key_path": kwargs.get("key_path", ""),
+    }
+    _svc().env.register_build_env(_svc().env.create_build_spec(data))
     click.echo(f"构建环境已注册: {kwargs['name']} (type={kwargs.get('env_type', 'local')})")
 
 
@@ -552,17 +548,16 @@ def env_add_build(**kwargs: Any) -> None:
 @click.option("--license", "lics", multiple=True, help="许可证 key=value（可多次）")
 def env_add_exe(**kwargs: Any) -> None:
     """注册执行环境"""
-    from framework.core.models import ExeEnvSpec
-    variables = _parse_kv_pairs(kwargs.get("var", ()))
-    licenses = _parse_kv_pairs(kwargs.get("lics", ()))
-    spec = ExeEnvSpec(
-        name=kwargs["name"], exe_env_type=kwargs.get("env_type", "eda"),
-        description=kwargs.get("desc", ""), api_url=kwargs.get("api_url", ""),
-        api_token=kwargs.get("api_token", ""), variables=variables,
-        licenses=licenses, timeout=kwargs.get("timeout", 3600),
-        build_env_name=kwargs.get("build_env_name", ""),
-    )
-    _svc().env.register_exe_env(spec)
+    data = {
+        "name": kwargs["name"], "exe_env_type": kwargs.get("env_type", "eda"),
+        "description": kwargs.get("desc", ""), "api_url": kwargs.get("api_url", ""),
+        "api_token": kwargs.get("api_token", ""),
+        "variables": _parse_kv_pairs(kwargs.get("var", ())),
+        "licenses": _parse_kv_pairs(kwargs.get("lics", ())),
+        "timeout": kwargs.get("timeout", 3600),
+        "build_env_name": kwargs.get("build_env_name", ""),
+    }
+    _svc().env.register_exe_env(_svc().env.create_exe_spec(data))
     click.echo(f"执行环境已注册: {kwargs['name']} (type={kwargs.get('env_type', 'eda')})")
 
 
@@ -678,12 +673,11 @@ def stimulus_add(
     storage_key: str, external_url: str, desc: str,
 ) -> None:
     """注册激励源"""
-    from framework.core.models import StimulusSpec
-    spec = StimulusSpec(
-        name=name, source_type=source_type,
-        generator_cmd=generator_cmd, storage_key=storage_key,
-        external_url=external_url, description=desc,
-    )
+    spec = _svc().stimulus.create_spec({
+        "name": name, "source_type": source_type,
+        "generator_cmd": generator_cmd, "storage_key": storage_key,
+        "external_url": external_url, "description": desc,
+    })
     _svc().stimulus.register(spec)
     click.echo(f"激励已注册: {name} (type={source_type})")
 
@@ -728,12 +722,11 @@ def stimulus_add_result(
     binary_path: str, parser_cmd: str, desc: str,
 ) -> None:
     """注册结果激励"""
-    from framework.core.models import ResultStimulusSpec
-    spec = ResultStimulusSpec(
-        name=name, source_type=source_type,
-        api_url=api_url, binary_path=binary_path,
-        parser_cmd=parser_cmd, description=desc,
-    )
+    spec = _svc().stimulus.create_result_stimulus_spec({
+        "name": name, "source_type": source_type,
+        "api_url": api_url, "binary_path": binary_path,
+        "parser_cmd": parser_cmd, "description": desc,
+    })
     _svc().stimulus.register_result_stimulus(spec)
     click.echo(f"结果激励已注册: {name} (type={source_type})")
 
@@ -760,12 +753,11 @@ def stimulus_add_trigger(
     binary_cmd: str, stimulus_name: str, desc: str,
 ) -> None:
     """注册激励触发器"""
-    from framework.core.models import TriggerSpec
-    spec = TriggerSpec(
-        name=name, trigger_type=trigger_type,
-        api_url=api_url, binary_cmd=binary_cmd,
-        stimulus_name=stimulus_name, description=desc,
-    )
+    spec = _svc().stimulus.create_trigger_spec({
+        "name": name, "trigger_type": trigger_type,
+        "api_url": api_url, "binary_cmd": binary_cmd,
+        "stimulus_name": stimulus_name, "description": desc,
+    })
     _svc().stimulus.register_trigger(spec)
     click.echo(f"触发器已注册: {name} (type={trigger_type})")
 
@@ -816,11 +808,10 @@ def build_add(
     build_cmd: str, clean_cmd: str, output_dir: str,
 ) -> None:
     """注册构建配置"""
-    from framework.core.models import BuildSpec
-    spec = BuildSpec(
-        name=name, repo_name=repo_name, setup_cmd=setup_cmd,
-        build_cmd=build_cmd, clean_cmd=clean_cmd, output_dir=output_dir,
-    )
+    spec = _svc().build.create_spec({
+        "name": name, "repo_name": repo_name, "setup_cmd": setup_cmd,
+        "build_cmd": build_cmd, "clean_cmd": clean_cmd, "output_dir": output_dir,
+    })
     _svc().build.register(spec)
     click.echo(f"构建已注册: {name}")
 
