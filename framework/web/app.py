@@ -10,6 +10,8 @@ Blueprint 拆分:
   builds_bp   — /api/builds/**   (5 routes)
   repos_bp    — /api/repos/**    (6 routes)
 
+所有路由统一通过 g.svc（Flask 请求级依赖注入）访问服务容器。
+
 启动方式: aieffect dashboard --port 8888
 """
 
@@ -35,11 +37,6 @@ from framework.web.blueprints.repos_bp import repos_bp
 from framework.web.blueprints.stimuli_bp import stimuli_bp
 
 logger = logging.getLogger(__name__)
-
-
-def _svc():  # type: ignore[no-untyped-def]
-    """获取全局服务容器的快捷方式"""
-    return get_container()
 
 MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB
 
@@ -125,8 +122,7 @@ def index():
 
 @app.route("/api/results")
 def api_results():
-    from framework.core.config import get_config
-    result_dir = Path(get_config().result_dir)
+    result_dir = Path(g.svc.config.result_dir)
     results = []
     if result_dir.exists():
         for f in sorted(result_dir.glob("*.json")):
@@ -142,8 +138,7 @@ def api_results():
 
 @app.route("/api/deps")
 def api_deps():
-    from framework.core.config import get_config
-    manifest = Path(get_config().manifest)
+    manifest = Path(g.svc.config.manifest)
     if not manifest.exists():
         return jsonify(packages=[])
     data = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
@@ -161,11 +156,8 @@ def api_upload_dep():
     file = request.files.get("file")
     if not name or not version or not file or not file.filename:
         return bad_request("需要提供 name、version 和 file")
-    try:
-        name = _validate_safe_name(name, "name")
-        version = _validate_safe_name(version, "version")
-    except ValueError as e:
-        return bad_request(str(e))
+    name = _validate_safe_name(name, "name")
+    version = _validate_safe_name(version, "version")
     safe_name = secure_filename(file.filename)
     if not safe_name:
         return bad_request("文件名不合法")
@@ -187,7 +179,7 @@ def api_upload_dep():
 
 @app.route("/api/cases", methods=["GET"])
 def api_cases_list():
-    return jsonify(cases=_svc().cases.list_cases(
+    return jsonify(cases=g.svc.cases.list_cases(
         tag=request.args.get("tag"),
         environment=request.args.get("environment"),
     ))
@@ -195,7 +187,7 @@ def api_cases_list():
 
 @app.route("/api/cases/<name>", methods=["GET"])
 def api_cases_get(name: str):
-    case = _svc().cases.get_case(name)
+    case = g.svc.cases.get_case(name)
     if case is None:
         return not_found("用例")
     return jsonify(case=case)
@@ -208,7 +200,7 @@ def api_cases_add():
     cmd = body.get("cmd", "")
     if not name or not cmd:
         return bad_request("需要提供 name 和 cmd")
-    case = _svc().cases.add_case(
+    case = g.svc.cases.add_case(
         name, cmd,
         description=body.get("description", ""),
         tags=body.get("tags", []),
@@ -221,7 +213,7 @@ def api_cases_add():
 @app.route("/api/cases/<name>", methods=["PUT"])
 def api_cases_update(name: str):
     body = request.get_json(silent=True) or {}
-    updated = _svc().cases.update_case(name, **body)
+    updated = g.svc.cases.update_case(name, **body)
     if updated is None:
         return not_found("用例")
     return jsonify(message=f"用例已更新: {name}", case=updated)
@@ -229,7 +221,7 @@ def api_cases_update(name: str):
 
 @app.route("/api/cases/<name>", methods=["DELETE"])
 def api_cases_delete(name: str):
-    if _svc().cases.remove_case(name):
+    if g.svc.cases.remove_case(name):
         return jsonify(message=f"用例已删除: {name}")
     return not_found("用例")
 
@@ -241,13 +233,13 @@ def api_cases_delete(name: str):
 
 @app.route("/api/snapshots", methods=["GET"])
 def api_snapshots_list():
-    return jsonify(snapshots=_svc().snapshots.list_snapshots())
+    return jsonify(snapshots=g.svc.snapshots.list_snapshots())
 
 
 @app.route("/api/snapshots", methods=["POST"])
 def api_snapshots_create():
     body = request.get_json(silent=True) or {}
-    snap = _svc().snapshots.create(
+    snap = g.svc.snapshots.create(
         description=body.get("description", ""),
         snapshot_id=body.get("id"),
     )
@@ -256,7 +248,7 @@ def api_snapshots_create():
 
 @app.route("/api/snapshots/<snapshot_id>", methods=["GET"])
 def api_snapshots_get(snapshot_id: str):
-    snap = _svc().snapshots.get(snapshot_id)
+    snap = g.svc.snapshots.get(snapshot_id)
     if snap is None:
         return not_found("快照")
     return jsonify(snapshot=snap)
@@ -264,14 +256,14 @@ def api_snapshots_get(snapshot_id: str):
 
 @app.route("/api/snapshots/<snapshot_id>/restore", methods=["POST"])
 def api_snapshots_restore(snapshot_id: str):
-    if _svc().snapshots.restore(snapshot_id):
+    if g.svc.snapshots.restore(snapshot_id):
         return jsonify(message=f"快照已恢复: {snapshot_id}")
     return not_found("快照")
 
 
 @app.route("/api/history", methods=["GET"])
 def api_history_list():
-    return jsonify(records=_svc().history.query(
+    return jsonify(records=g.svc.history.query(
         suite=request.args.get("suite"),
         environment=request.args.get("environment"),
         case_name=request.args.get("case_name"),
@@ -281,7 +273,7 @@ def api_history_list():
 
 @app.route("/api/history/case/<case_name>", methods=["GET"])
 def api_history_case(case_name: str):
-    return jsonify(summary=_svc().history.case_summary(case_name))
+    return jsonify(summary=g.svc.history.case_summary(case_name))
 
 
 @app.route("/api/history/submit", methods=["POST"])
@@ -289,18 +281,18 @@ def api_history_submit():
     body = request.get_json(silent=True) or {}
     if "suite" not in body or "results" not in body:
         return bad_request("需要提供 suite 和 results")
-    try:
-        entry = _svc().history.submit_external(body)
-    except ValueError as e:
-        return bad_request(str(e))
+    entry = g.svc.history.submit_external(body)
     return jsonify(message="执行结果已录入", entry=entry)
 
 
 @app.route("/api/check-log", methods=["POST"])
 def api_check_log():
-    from framework.core.log_checker import LogChecker
-    rules_file = request.args.get("rules", "configs/log_rules.yml")
-    checker = LogChecker(rules_file=rules_file)
+    rules_file = request.args.get("rules", "")
+    if rules_file:
+        from framework.core.log_checker import LogChecker
+        checker = LogChecker(rules_file=rules_file)
+    else:
+        checker = g.svc.log_checker
     file = request.files.get("file")
     text = None
     source = ""
@@ -326,26 +318,20 @@ def api_check_log():
 
 @app.route("/api/resource", methods=["GET"])
 def api_resource_status():
-    return jsonify(asdict(_svc().resources.status()))
+    return jsonify(asdict(g.svc.resources.status()))
 
 
 @app.route("/api/storage/<namespace>", methods=["GET"])
 def api_storage_list(namespace: str):
-    try:
-        namespace = _validate_safe_name(namespace, "namespace")
-    except ValueError as e:
-        return bad_request(str(e))
+    namespace = _validate_safe_name(namespace, "namespace")
     from framework.core.storage import create_storage
     return jsonify(namespace=namespace, keys=create_storage().list_keys(namespace))
 
 
 @app.route("/api/storage/<namespace>/<key>", methods=["GET"])
 def api_storage_get(namespace: str, key: str):
-    try:
-        namespace = _validate_safe_name(namespace, "namespace")
-        key = _validate_safe_name(key, "key")
-    except ValueError as e:
-        return bad_request(str(e))
+    namespace = _validate_safe_name(namespace, "namespace")
+    key = _validate_safe_name(key, "key")
     from framework.core.storage import create_storage
     data = create_storage().get(namespace, key)
     if data is None:
@@ -355,11 +341,8 @@ def api_storage_get(namespace: str, key: str):
 
 @app.route("/api/storage/<namespace>/<key>", methods=["PUT"])
 def api_storage_put(namespace: str, key: str):
-    try:
-        namespace = _validate_safe_name(namespace, "namespace")
-        key = _validate_safe_name(key, "key")
-    except ValueError as e:
-        return bad_request(str(e))
+    namespace = _validate_safe_name(namespace, "namespace")
+    key = _validate_safe_name(key, "key")
     from framework.core.storage import create_storage
     body = request.get_json(silent=True) or {}
     path = create_storage().put(namespace, key, body)
@@ -377,13 +360,13 @@ def api_results_compare():
     run_b = request.args.get("run_b", "")
     if not run_a or not run_b:
         return bad_request("需要提供 run_a 和 run_b")
-    return jsonify(_svc().result.compare_runs(run_a, run_b))
+    return jsonify(g.svc.result.compare_runs(run_a, run_b))
 
 
 @app.route("/api/results/export", methods=["POST"])
 def api_results_export():
     body = request.get_json(silent=True) or {}
-    path = _svc().result.export(fmt=body.get("format", "html"))
+    path = g.svc.result.export(fmt=body.get("format", "html"))
     return jsonify(message="报告已生成", path=path)
 
 
@@ -392,7 +375,7 @@ def api_results_upload():
     from framework.services.result_service import StorageConfig
     body = request.get_json(silent=True) or {}
     cfg = StorageConfig.from_dict(body.get("storage", {}))
-    result = _svc().result.upload(config=cfg, run_id=body.get("run_id", ""))
+    result = g.svc.result.upload(config=cfg, run_id=body.get("run_id", ""))
     return jsonify(result)
 
 
@@ -423,7 +406,7 @@ def api_orchestrate():
         snapshot_id=body.get("snapshot_id", ""),
         case_names=body.get("case_names", []),
     )
-    report = ExecutionOrchestrator().run(plan)
+    report = ExecutionOrchestrator(container=g.svc).run(plan)
     sr = report.suite_result
     return jsonify(
         success=report.success,
