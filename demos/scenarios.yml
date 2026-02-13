@@ -1,0 +1,62 @@
+# =========================================================================
+# 编排模板 — 只定义基线，测试用例内 inline 覆盖差异参数
+#
+# 设计思路:
+#   1. YAML 只放少量「模板」，每个模板是一种典型部署拓扑的完整默认值
+#   2. 测试用例通过 conftest.py 提供的 make_plan fixture 加载模板，
+#      再用关键字参数覆盖需要变化的字段 (分支、用例、并行度等)
+#   3. 新增验证场景 = 新增一行 @pytest.mark.parametrize，无需改本文件
+#
+# 用法示例 (在 test_*.py 中):
+#   plan = make_plan("local", branch="br_fix_xxx", cases=["tc1", "tc2"])
+#   plan = make_plan("remote", suite="regression", parallel=8)
+#   plan = make_plan("local", snapshot_id="20250210B001")
+#
+# 可覆盖的关键字参数:
+#   branch        — 语法糖，自动展开为 repo_ref_overrides={第一个repo: branch}
+#   cases         — 语法糖，自动展开为 case_names=[...]
+#   suite         — 测试套名 (smoke / regression / ...)
+#   parallel      — 并行度
+#   snapshot_id   — 依赖配置套版本
+#   以及 OrchestrationPlan 支持的任意字段 (通过 **overrides 透传)
+# =========================================================================
+
+# ---------------------------------------------------------------------------
+# 模板: local — 本地 PC 构建 + 本地 EDA 仿真器执行
+#
+# 适用场景:
+#   - 开发者本机验证修复分支
+#   - 小规模 smoke / sanity 快速反馈
+#   - 无需远程服务器即可完成的验证任务
+# ---------------------------------------------------------------------------
+local:
+  snapshot_id: "20250206B003"       # 依赖配置套版本，锁定 EDA 工具链 + IP 版本
+  suite: smoke                     # 默认跑 smoke 套件
+  parallel: 4                      # 本地 PC 默认 4 路并行
+  build_env_name: local_pc         # 构建环境: 本地 PC (gcc/g++)
+  exe_env_name: sim_eda            # 执行环境: 本地 EDA 仿真器 (VCS/Xcelium)
+  repo_names: [rtl_core]           # 需要 checkout 的代码仓
+  build_names: [rtl_build]         # 需要执行的构建配置
+  upload:                          # 结果上传方式
+    type: rsync                    #   rsync 同步到远程服务器
+    target: "ci@10.0.1.100:/data/results"
+
+# ---------------------------------------------------------------------------
+# 模板: remote — 远程服务器 B 构建 + 远程 EDA 仿真器执行
+#
+# 适用场景:
+#   - CI/CD 流水线触发的验证任务
+#   - 大规模回归 (regression) 需要远程算力
+#   - 通过 Web 看板提交的远程执行请求
+# ---------------------------------------------------------------------------
+remote:
+  snapshot_id: "20250206B003"       # 依赖配置套版本
+  suite: smoke                     # 默认 smoke，测试用例可覆盖为 regression
+  parallel: 4                      # 远程服务器默认 4 路，回归时可覆盖为 8/16
+  build_env_name: remote_server_b  # 构建环境: 远程服务器 B (SSH)
+  exe_env_name: sim_eda_remote     # 执行环境: 远程 EDA 仿真器
+  repo_names: [rtl_core]           # 需要 checkout 的代码仓
+  build_names: [rtl_build]         # 需要执行的构建配置
+  upload:                          # 结果上传方式
+    type: rsync
+    target: "ci@10.0.2.200:/data/results"
