@@ -284,10 +284,9 @@ class StimulusService(YamlRegistry):
         )
 
     def _get_repo_service(self) -> RepoService:
-        if self._repo_service is not None:
-            return self._repo_service
-        from framework.services.repo_service import RepoService
-        return RepoService()
+        if self._repo_service is None:
+            raise ValidationError("StimulusService 未注入 RepoService，请通过容器获取")
+        return self._repo_service
 
     def _acquire_from_repo(self, spec: StimulusSpec, dest: Path) -> StimulusArtifact:
         """从代码仓检出激励"""

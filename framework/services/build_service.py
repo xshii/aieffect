@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -39,14 +40,14 @@ class BuildService(YamlRegistry):
         super().__init__(registry_file)
         self.output_root = Path(output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
+        self._cache_lock = threading.Lock()
         self._build_cache: dict[tuple[str, str], BuildResult] = {}
         self._repo_service = repo_service
 
     def _get_repo_service(self) -> RepoService:
-        if self._repo_service is not None:
-            return self._repo_service
-        from framework.services.repo_service import RepoService
-        return RepoService()
+        if self._repo_service is None:
+            raise ValidationError("BuildService 未注入 RepoService，请通过容器获取")
+        return self._repo_service
 
     # ---- 注册 / CRUD ----
 
@@ -96,9 +97,10 @@ class BuildService(YamlRegistry):
     def remove(self, name: str) -> bool:
         if not self._remove(name):
             return False
-        keys_to_remove = [k for k in self._build_cache if k[0] == name]
-        for k in keys_to_remove:
-            del self._build_cache[k]
+        with self._cache_lock:
+            keys_to_remove = [k for k in self._build_cache if k[0] == name]
+            for k in keys_to_remove:
+                del self._build_cache[k]
         logger.info("构建已移除: %s", name)
         return True
 
@@ -144,9 +146,10 @@ class BuildService(YamlRegistry):
     ) -> BuildResult | None:
         """检查构建缓存，返回缓存结果或None（未命中或force=True）"""
         cache_key = (spec.name, ref)
-        if force or cache_key not in self._build_cache:
-            return None
-        cached = self._build_cache[cache_key]
+        with self._cache_lock:
+            if force or cache_key not in self._build_cache:
+                return None
+            cached = self._build_cache[cache_key]
         if cached.status != "success":
             return None
         logger.info("构建缓存命中: %s (ref=%s)", spec.name, ref)
@@ -198,25 +201,28 @@ class BuildService(YamlRegistry):
             spec=spec, output_path=output_path,
             status="success", duration=duration, repo_ref=effective_ref,
         )
-        self._build_cache[(spec.name, effective_ref)] = result
+        with self._cache_lock:
+            self._build_cache[(spec.name, effective_ref)] = result
         logger.info("构建完成: %s (ref=%s, %.1fs)", spec.name, effective_ref, duration)
         return result
 
     def is_cached(self, name: str, repo_ref: str = "") -> bool:
-        cached = self._build_cache.get((name, repo_ref))
+        with self._cache_lock:
+            cached = self._build_cache.get((name, repo_ref))
         return cached is not None and cached.status == "success"
 
     def invalidate_cache(self, name: str, repo_ref: str = "") -> bool:
-        if repo_ref:
-            key = (name, repo_ref)
-            if key in self._build_cache:
-                del self._build_cache[key]
-                return True
-            return False
-        keys = [k for k in self._build_cache if k[0] == name]
-        for k in keys:
-            del self._build_cache[k]
-        return len(keys) > 0
+        with self._cache_lock:
+            if repo_ref:
+                key = (name, repo_ref)
+                if key in self._build_cache:
+                    del self._build_cache[key]
+                    return True
+                return False
+            keys = [k for k in self._build_cache if k[0] == name]
+            for k in keys:
+                del self._build_cache[k]
+            return len(keys) > 0
 
     def clean(self, name: str, *, work_dir: str = "") -> bool:
         spec = self.get(name)

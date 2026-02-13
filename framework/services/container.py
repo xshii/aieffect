@@ -60,11 +60,21 @@ class ServiceContainer:
     """
 
     def __init__(self, config: Config | None = None) -> None:
+        self._lock = threading.RLock()
         self._instances: dict[str, object] = {}
         if config is None:
             from framework.core.config import get_config
             config = get_config()
         self._config = config
+
+    def _get_or_create(self, key: str, factory: object) -> object:
+        """线程安全的懒加载：双重检查锁"""
+        if key in self._instances:
+            return self._instances[key]
+        with self._lock:
+            if key not in self._instances:
+                self._instances[key] = factory()  # type: ignore[operator]
+            return self._instances[key]
 
     @property
     def config(self) -> Config:
@@ -74,128 +84,122 @@ class ServiceContainer:
 
     @property
     def repo(self) -> RepoService:
-        if "repo" not in self._instances:
+        def _create() -> RepoService:
             from framework.services.repo_service import RepoService
-            self._instances["repo"] = RepoService(
+            return RepoService(
                 registry_file=self._config.repos_file,
                 workspace_root=self._config.workspace_dir,
                 dep_manager=self.deps,
             )
-        return self._instances["repo"]  # type: ignore[return-value]
+        return self._get_or_create("repo", _create)  # type: ignore[return-value]
 
     @property
     def build(self) -> BuildService:
-        if "build" not in self._instances:
+        def _create() -> BuildService:
             from framework.services.build_service import BuildService
-            self._instances["build"] = BuildService(
+            return BuildService(
                 registry_file=self._config.builds_file,
                 output_root=str(Path(self._config.workspace_dir) / "builds"),
                 repo_service=self.repo,
             )
-        return self._instances["build"]  # type: ignore[return-value]
+        return self._get_or_create("build", _create)  # type: ignore[return-value]
 
     @property
     def stimulus(self) -> StimulusService:
-        if "stimulus" not in self._instances:
+        def _create() -> StimulusService:
             from framework.services.stimulus_service import StimulusService
-            self._instances["stimulus"] = StimulusService(
+            return StimulusService(
                 registry_file=self._config.stimuli_file,
                 artifact_dir=str(Path(self._config.workspace_dir) / "stimuli"),
                 repo_service=self.repo,
             )
-        return self._instances["stimulus"]  # type: ignore[return-value]
+        return self._get_or_create("stimulus", _create)  # type: ignore[return-value]
 
     @property
     def env(self) -> EnvService:
-        if "env" not in self._instances:
+        def _create() -> EnvService:
             from framework.services.env_service import EnvService
-            self._instances["env"] = EnvService(
-                registry_file=self._config.envs_file,
-            )
-        return self._instances["env"]  # type: ignore[return-value]
+            return EnvService(registry_file=self._config.envs_file)
+        return self._get_or_create("env", _create)  # type: ignore[return-value]
 
     @property
     def result(self) -> ResultService:
-        if "result" not in self._instances:
+        def _create() -> ResultService:
             from framework.services.result_service import ResultService
-            self._instances["result"] = ResultService(
+            return ResultService(
                 result_dir=self._config.result_dir,
                 history_file=self._config.history_file,
             )
-        return self._instances["result"]  # type: ignore[return-value]
+        return self._get_or_create("result", _create)  # type: ignore[return-value]
 
     @property
     def run(self) -> RunService:
-        if "run" not in self._instances:
+        def _create() -> RunService:
             from framework.core.pipeline import ResultPipeline
             from framework.services.run_service import RunService
-            pipeline = ResultPipeline(
-                history_file=self._config.history_file,
-                result_dir=self._config.result_dir,
+            return RunService(
+                pipeline=ResultPipeline(
+                    history_file=self._config.history_file,
+                    result_dir=self._config.result_dir,
+                ),
+                config=self._config,
             )
-            self._instances["run"] = RunService(pipeline=pipeline)
-        return self._instances["run"]  # type: ignore[return-value]
+        return self._get_or_create("run", _create)  # type: ignore[return-value]
 
     # ---- 核心管理器（Facade — 统一访问入口） ----
 
     @property
     def cases(self) -> CaseManager:
-        if "cases" not in self._instances:
+        def _create() -> CaseManager:
             from framework.core.case_manager import CaseManager
-            self._instances["cases"] = CaseManager(
-                cases_file=self._config.cases_file,
-            )
-        return self._instances["cases"]  # type: ignore[return-value]
+            return CaseManager(cases_file=self._config.cases_file)
+        return self._get_or_create("cases", _create)  # type: ignore[return-value]
 
     @property
     def deps(self) -> DepManager:
-        if "deps" not in self._instances:
+        def _create() -> DepManager:
             from framework.core.dep_manager import DepManager
-            self._instances["deps"] = DepManager(
+            return DepManager(
                 registry_path=self._config.manifest,
                 cache_dir=self._config.cache_dir,
                 packages_dir=self._config.packages_dir,
             )
-        return self._instances["deps"]  # type: ignore[return-value]
+        return self._get_or_create("deps", _create)  # type: ignore[return-value]
 
     @property
     def history(self) -> HistoryManager:
-        if "history" not in self._instances:
+        def _create() -> HistoryManager:
             from framework.core.history import HistoryManager
-            self._instances["history"] = HistoryManager(
-                history_file=self._config.history_file,
-            )
-        return self._instances["history"]  # type: ignore[return-value]
+            return HistoryManager(history_file=self._config.history_file)
+        return self._get_or_create("history", _create)  # type: ignore[return-value]
 
     @property
     def snapshots(self) -> SnapshotManager:
-        if "snapshots" not in self._instances:
+        def _create() -> SnapshotManager:
             from framework.core.snapshot import SnapshotManager
-            self._instances["snapshots"] = SnapshotManager(
+            return SnapshotManager(
                 manifest_path=self._config.manifest,
                 snapshots_dir=self._config.snapshots_dir,
             )
-        return self._instances["snapshots"]  # type: ignore[return-value]
+        return self._get_or_create("snapshots", _create)  # type: ignore[return-value]
 
     @property
     def resources(self) -> ResourceManager:
-        if "resources" not in self._instances:
+        def _create() -> ResourceManager:
             from framework.core.resource import ResourceManager
-            self._instances["resources"] = ResourceManager(
+            return ResourceManager(
                 mode=self._config.resource_mode,
                 capacity=self._config.max_workers,
                 api_url=self._config.resource_api_url,
             )
-        return self._instances["resources"]  # type: ignore[return-value]
+        return self._get_or_create("resources", _create)  # type: ignore[return-value]
 
     @property
     def log_checker(self) -> LogChecker:
-        if "log_checker" not in self._instances:
+        def _create() -> LogChecker:
             from framework.core.log_checker import LogChecker
-            self._instances["log_checker"] = LogChecker(
-                rules_file=self._config.log_rules_file,
-            )
-        return self._instances["log_checker"]  # type: ignore[return-value]
+            return LogChecker(rules_file=self._config.log_rules_file)
+        return self._get_or_create("log_checker", _create)  # type: ignore[return-value]
 
 
 # ---- 全局单例 ----

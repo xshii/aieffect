@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from framework.core.models import Case, SuiteResult, TaskResult
 from framework.core.scheduler import Scheduler, make_repo_preparer
 from framework.utils.yaml_io import load_yaml
+
+if TYPE_CHECKING:
+    from framework.core.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -15,26 +19,34 @@ logger = logging.getLogger(__name__)
 class CaseRunner:
     """测试套件执行编排器"""
 
-    def __init__(self, config_path: str = "configs/default.yml", parallel: int = 1) -> None:
-        from framework.core.config import get_config
+    def __init__(
+        self,
+        config_path: str = "configs/default.yml",
+        parallel: int = 1,
+        config: Config | None = None,
+    ) -> None:
         from framework.core.resource import ResourceManager
+
+        if config is None:
+            from framework.core.config import get_config
+            config = get_config()
 
         self.config = self._load_config(config_path)
         self.parallel = parallel
-        cfg = get_config()
+        self._cfg = config
 
         # 从配置中初始化资源管理器
         res_cfg = self.config.get("resource", {})
         resource_mgr = ResourceManager(
-            mode=res_cfg.get("mode", cfg.resource_mode),
-            capacity=res_cfg.get("max_workers", max(cfg.max_workers, parallel)),
-            api_url=res_cfg.get("api_url", cfg.resource_api_url),
+            mode=res_cfg.get("mode", config.resource_mode),
+            capacity=res_cfg.get("max_workers", max(config.max_workers, parallel)),
+            api_url=res_cfg.get("api_url", config.resource_api_url),
         ) if res_cfg else None
 
         self.scheduler = Scheduler(
             max_workers=parallel,
             resource_manager=resource_mgr,
-            repo_preparer=make_repo_preparer(cfg.workspace_dir),
+            repo_preparer=make_repo_preparer(config.workspace_dir),
         )
 
     @staticmethod
@@ -47,9 +59,7 @@ class CaseRunner:
 
     def load_suite(self, suite_name: str) -> list[Case]:
         """从套件定义文件加载测试用例"""
-        from framework.core.config import get_config
-        cfg = get_config()
-        suite_dir = Path(self.config.get("suite_dir", cfg.suite_dir))
+        suite_dir = Path(self.config.get("suite_dir", self._cfg.suite_dir))
         suite_file = suite_dir / f"{suite_name}.yml"
 
         if not suite_file.exists():
@@ -64,7 +74,7 @@ class CaseRunner:
                 Case(
                     name=tc["name"],
                     args=tc.get("args", {}),
-                    timeout=tc.get("timeout", cfg.default_timeout),
+                    timeout=tc.get("timeout", self._cfg.default_timeout),
                     tags=tc.get("tags", []),
                     environment=tc.get("environment", ""),
                     repo=tc.get("repo", {}),

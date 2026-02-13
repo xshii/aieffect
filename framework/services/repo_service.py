@@ -17,6 +17,7 @@ import logging
 import re
 import subprocess
 import tarfile
+import threading
 import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -46,6 +47,7 @@ class RepoService(YamlRegistry):
         super().__init__(registry_file)
         self.workspace_root = Path(workspace_root)
         self.workspace_root.mkdir(parents=True, exist_ok=True)
+        self._cache_lock = threading.Lock()
         self._workspace_cache: dict[tuple[str, str], RepoWorkspace] = {}
         self._dep_manager = dep_manager
 
@@ -137,17 +139,18 @@ class RepoService(YamlRegistry):
         ref = ref_override or spec.ref
         cache_key = (name, ref)
 
-        # 复用已有工作目录
-        if shared and cache_key in self._workspace_cache:
-            cached = self._workspace_cache[cache_key]
-            if cached.status not in ("error", "pending"):
-                logger.info("复用已有工作目录: %s@%s -> %s", name, ref, cached.local_path)
-                return cached
+        with self._cache_lock:
+            # 复用已有工作目录
+            if shared and cache_key in self._workspace_cache:
+                cached = self._workspace_cache[cache_key]
+                if cached.status not in ("error", "pending"):
+                    logger.info("复用已有工作目录: %s@%s -> %s", name, ref, cached.local_path)
+                    return cached
 
-        ws = self._dispatch_checkout(spec, ref)
-        self._post_checkout(ws, spec, name)
-        self._workspace_cache[cache_key] = ws
-        return ws
+            ws = self._dispatch_checkout(spec, ref)
+            self._post_checkout(ws, spec, name)
+            self._workspace_cache[cache_key] = ws
+            return ws
 
     def _dispatch_checkout(self, spec: RepoSpec, ref: str) -> RepoWorkspace:
         """按来源类型分派检出"""
@@ -333,9 +336,10 @@ class RepoService(YamlRegistry):
                 shutil.rmtree(child, ignore_errors=True)
                 count += 1
         # 清理缓存
-        self._workspace_cache = {
-            k: v for k, v in self._workspace_cache.items() if k[0] != name
-        }
+        with self._cache_lock:
+            self._workspace_cache = {
+                k: v for k, v in self._workspace_cache.items() if k[0] != name
+            }
         logger.info("已清理 %s 的 %d 个工作目录", name, count)
         return count
 
