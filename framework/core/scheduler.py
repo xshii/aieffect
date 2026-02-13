@@ -11,9 +11,9 @@ import re
 import shlex
 import subprocess
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable
 
 from framework.core.exceptions import ExecutionError, ResourceError, ValidationError
 from framework.core.models import Case, TaskResult

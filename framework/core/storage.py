@@ -17,9 +17,8 @@ import logging
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
-
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

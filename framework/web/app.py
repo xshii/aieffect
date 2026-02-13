@@ -30,11 +30,11 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 
 from framework.services.container import get_container
-from framework.web.responses import bad_request, not_found
 from framework.web.blueprints.builds_bp import builds_bp
 from framework.web.blueprints.envs_bp import envs_bp
 from framework.web.blueprints.repos_bp import repos_bp
 from framework.web.blueprints.stimuli_bp import stimuli_bp
+from framework.web.responses import bad_request, not_found
 
 logger = logging.getLogger(__name__)
 
@@ -421,6 +421,7 @@ def api_orchestrate():
 
 def run_server(port: int = 8888, debug: bool = False, host: str = "127.0.0.1") -> None:
     import os
+
     from framework.utils.logger import setup_logging
     setup_logging(
         level=os.getenv("AIEFFECT_LOG_LEVEL", "INFO"),

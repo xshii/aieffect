@@ -11,8 +11,8 @@ from framework.core.exceptions import CaseNotFoundError, ValidationError
 class CaseService:
     """用例管理服务"""
 
-    def __init__(self, case_manager: CaseManager | None = None) -> None:
-        self.cm = case_manager or CaseManager()
+    def __init__(self, case_manager: CaseManager) -> None:
+        self.cm = case_manager
 
     def create(self, *, name: str = "", cmd: str = "", **kwargs: Any) -> dict[str, object]:
         """创建用例，返回完整用例 dict"""

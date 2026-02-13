@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 import click
 
 from framework.cli import _svc
 from framework.utils.yaml_io import load_yaml, save_yaml
+
+if TYPE_CHECKING:
+    from framework.core.dep_manager import DepManager
 
 
 def register(group: click.Group) -> None:
@@ -19,14 +22,20 @@ def register(group: click.Group) -> None:
     group.add_command(apply_deps)
 
 
+def _make_dep_manager(registry: str) -> DepManager:
+    from framework.core.config import get_config
+    from framework.core.dep_manager import DepManager
+    cfg = get_config()
+    return DepManager(registry_path=registry, cache_dir=cfg.cache_dir)
+
+
 @click.command()
 @click.option("--registry", default="deps/manifest.yml", help="依赖包清单路径")
 @click.option("--name", default=None, help="指定包名（不指定则拉取全部）")
 @click.option("--version", default=None, help="指定版本（覆盖注册表默认版本）")
 def fetch(registry: str, name: str | None, version: str | None) -> None:
     """拉取依赖包（本地优先，不存在时远程下载）"""
-    from framework.core.dep_manager import DepManager
-    dm = DepManager(registry_path=registry)
+    dm = _make_dep_manager(registry)
     if name:
         path = dm.fetch(name, version=version)
         click.echo(f"就绪: {name} -> {path}")
@@ -38,8 +47,7 @@ def fetch(registry: str, name: str | None, version: str | None) -> None:
 @click.option("--registry", default="deps/manifest.yml", help="依赖包清单路径")
 def list_deps(registry: str) -> None:
     """列出所有已注册的依赖包"""
-    from framework.core.dep_manager import DepManager
-    dm = DepManager(registry_path=registry)
+    dm = _make_dep_manager(registry)
     packages = dm.list_packages()
     if not packages:
         click.echo("没有已注册的依赖包。")
@@ -59,8 +67,7 @@ def list_deps(registry: str) -> None:
 @click.option("--registry", default="deps/manifest.yml", help="依赖包清单路径")
 def resolve_dep(name: str, version: str | None, registry: str) -> None:
     """解析本地已安装版本路径（不下载）"""
-    from framework.core.dep_manager import DepManager
-    dm = DepManager(registry_path=registry)
+    dm = _make_dep_manager(registry)
     path = dm.resolve(name, version=version)
     if path:
         click.echo(str(path))
@@ -77,8 +84,7 @@ def resolve_dep(name: str, version: str | None, registry: str) -> None:
 @click.option("--registry", default="deps/manifest.yml", help="依赖包清单路径")
 def list_versions(name: str, registry: str) -> None:
     """列出依赖包本地已安装的所有版本"""
-    from framework.core.dep_manager import DepManager
-    dm = DepManager(registry_path=registry)
+    dm = _make_dep_manager(registry)
     versions = dm.list_local_versions(name)
     current = dm.packages[name].version
     if not versions:

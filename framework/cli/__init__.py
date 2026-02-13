@@ -39,15 +39,15 @@ def main() -> None:
 
 
 # 注册各领域子命令
-from framework.cli.cmd_run import register as _reg_run  # noqa: E402
-from framework.cli.cmd_deps import register as _reg_deps  # noqa: E402
-from framework.cli.cmd_cases import register as _reg_cases  # noqa: E402
-from framework.cli.cmd_repo import register as _reg_repo  # noqa: E402
-from framework.cli.cmd_env import register as _reg_env  # noqa: E402
-from framework.cli.cmd_stimulus import register as _reg_stimulus  # noqa: E402
 from framework.cli.cmd_build import register as _reg_build  # noqa: E402
-from framework.cli.cmd_result import register as _reg_result  # noqa: E402
+from framework.cli.cmd_cases import register as _reg_cases  # noqa: E402
+from framework.cli.cmd_deps import register as _reg_deps  # noqa: E402
+from framework.cli.cmd_env import register as _reg_env  # noqa: E402
 from framework.cli.cmd_misc import register as _reg_misc  # noqa: E402
+from framework.cli.cmd_repo import register as _reg_repo  # noqa: E402
+from framework.cli.cmd_result import register as _reg_result  # noqa: E402
+from framework.cli.cmd_run import register as _reg_run  # noqa: E402
+from framework.cli.cmd_stimulus import register as _reg_stimulus  # noqa: E402
 
 _reg_run(main)
 _reg_deps(main)
