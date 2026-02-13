@@ -371,5 +371,145 @@ pip install pyyaml click rich junitparser flask types-PyYAML
 
 ---
 
-*上次更新: 2026-02-12*
-*工具: Ruff, MyPy, Pylint, Bandit, Radon, Vulture*
+## 15. 文件级审查 - logger.py
+
+**审查时间**: 2026-02-13
+**文件**: `framework/utils/logger.py` (45行)
+
+### 文件概览
+- **功能**: 日志配置工具，提供JSON和普通格式的日志输出
+- **核心组件**: `JSONFormatter` 类、`setup_logging` 函数
+- **依赖**: logging, json, sys, datetime
+
+### 发现的问题
+
+#### 🔴 问题1: Handler重复添加 (严重)
+**位置**: 33-44行
+**问题描述**:
+```python
+root = logging.getLogger()
+root.setLevel(...)
+handler = logging.StreamHandler(sys.stderr)
+root.addHandler(handler)  # ⚠️ 每次调用都会添加新handler
+```
+
+**影响**: 如果多次调用 `setup_logging()`，会导致日志重复输出多次
+
+**严重性**: 🔴 高 - 会导致实际运行时bug
+
+**修复方案**:
+```python
+def setup_logging(level: str = "INFO", json_output: bool = False) -> None:
+    root = logging.getLogger()
+
+    # 清理现有handlers，避免重复
+    for handler in root.handlers[:]:
+        root.removeHandler(handler)
+        handler.close()
+
+    root.setLevel(getattr(logging, level.upper(), logging.INFO))
+    # ... 其余代码
+```
+
+---
+
+#### 🔵 问题2: 时间戳来源 (最佳实践建议)
+**位置**: 16行
+**问题描述**:
+```python
+"timestamp": datetime.now(tz=timezone.utc).isoformat(),  # 使用格式化时的时间
+```
+
+**争议**: 在当前**同步输出**场景下，`datetime.now()` 与 `record.created` 几乎无差异
+
+**最佳实践建议**:
+```python
+"timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+```
+
+**好处**:
+- 符合 Python logging 标准设计
+- 记录的是事件发生时间，而非格式化时间
+- 未来如果改用异步日志不会出问题
+- 与 `record.relativeCreated` 等字段时间一致
+
+**严重性**: 🔵 低 - 当前场景影响微小，但建议遵循标准
+
+---
+
+#### 🟢 问题3: 缺少功能增强 (可选)
+**问题描述**:
+- JSON日志可以包含更多上下文信息（文件名、行号、函数名）
+- 没有提供重置日志配置的函数
+- 没有提供获取logger实例的辅助函数
+
+**建议增强**:
+```python
+# 1. JSONFormatter 增加更多上下文
+def format(self, record: logging.LogRecord) -> str:
+    log_entry = {
+        "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+        "level": record.levelname,
+        "logger": record.name,
+        "message": record.getMessage(),
+        # 可选：添加更多上下文
+        "module": record.module,
+        "function": record.funcName,
+        "line": record.lineno,
+    }
+    if record.exc_info and record.exc_info[1]:
+        log_entry["exception"] = self.formatException(record.exc_info)
+    return json.dumps(log_entry)
+
+# 2. 添加辅助函数
+def get_logger(name: str) -> logging.Logger:
+    """获取命名logger"""
+    return logging.getLogger(name)
+
+def reset_logging() -> None:
+    """重置日志配置"""
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        root.removeHandler(handler)
+        handler.close()
+```
+
+**严重性**: 🟢 低 - 功能增强，非必须
+
+---
+
+### 代码质量评分
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| 可读性 | ⭐⭐⭐⭐⭐ | 代码简洁清晰 |
+| 正确性 | ⭐⭐⭐ | 有handler重复问题 |
+| 可维护性 | ⭐⭐⭐⭐ | 结构清晰，但缺少重置功能 |
+| 文档 | ⭐⭐⭐⭐ | 有docstring，但可以更详细 |
+| **总分** | **⭐⭐⭐⭐** | **良好，需要小幅改进** |
+
+---
+
+### 重构优先级
+
+| 问题 | 优先级 | 是否必须 | 理由 |
+|------|--------|----------|------|
+| Handler重复添加 | 🔴 高 | ✅ 必须 | 会导致实际bug |
+| 时间戳来源 | 🔵 低 | ❌ 可选 | 当前场景影响微小 |
+| 功能增强 | 🟢 低 | ❌ 可选 | 增强型改进 |
+
+---
+
+### 建议行动
+
+**必须修复**:
+- ✅ 问题1：添加handler清理逻辑
+
+**可选改进**:
+- 问题2：使用 `record.created` (遵循标准)
+- 问题3：添加辅助函数和更多上下文
+
+---
+
+*上次更新: 2026-02-13*
+*工具: Ruff, MyPy, Pylint, Bandit, Radon, Vulture + 人工代码审查*
