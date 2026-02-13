@@ -1,4 +1,4 @@
-Run started:2026-02-12 23:49:19.207492+00:00
+Run started:2026-02-13 00:01:13.705674+00:00
 
 Test results:
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -246,31 +246,21 @@ Test results:
    Location: framework/services/env_service.py:23:0
 22	import shlex
 23	import subprocess
-24	import uuid
-
---------------------------------------------------
->> Issue: [B108:hardcoded_tmp_directory] Probable insecure usage of temp file/directory.
-   Severity: Medium   Confidence: Medium
-   CWE: CWE-377 (https://cwe.mitre.org/data/definitions/377.html)
-   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b108_hardcoded_tmp_directory.html
-   Location: framework/services/env_service.py:120:32
-119	            return session
-120	        work = spec.work_dir or f"/tmp/aieffect/{session.name}"
-121	        session.work_dir = work
+24	import tempfile
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/env_service.py:482:21
-481	        try:
-482	            result = subprocess.run(
-483	                shlex.split(cmd),
-484	                capture_output=True, text=True, timeout=timeout,
-485	                cwd=work_dir, env=env, check=False,
-486	            )
-487	            return {
+   Location: framework/services/env_service.py:502:21
+501	        try:
+502	            result = subprocess.run(
+503	                shlex.split(cmd),
+504	                capture_output=True, text=True, timeout=timeout,
+505	                cwd=work_dir, env=env, check=False,
+506	            )
+507	            return {
 
 --------------------------------------------------
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -453,13 +443,13 @@ Test results:
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: framework/services/result_service.py:326:16
-325	        try:
-326	            r = subprocess.run(
-327	                cmd_parts, capture_output=True, text=True,
-328	                check=False, timeout=600,
-329	            )
-330	        except subprocess.TimeoutExpired:
+   Location: framework/services/result_service.py:338:16
+337	        try:
+338	            r = subprocess.run(
+339	                cmd_parts, capture_output=True, text=True,
+340	                check=False, timeout=600,
+341	            )
+342	        except subprocess.TimeoutExpired:
 
 --------------------------------------------------
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -549,7 +539,7 @@ Test results:
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 5726
+	Total lines of code: 5763
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 10
 
@@ -557,11 +547,11 @@ Run metrics:
 	Total issues (by severity):
 		Undefined: 0
 		Low: 43
-		Medium: 1
+		Medium: 0
 		High: 0
 	Total issues (by confidence):
 		Undefined: 0
 		Low: 0
-		Medium: 1
+		Medium: 0
 		High: 43
 Files skipped (0):
