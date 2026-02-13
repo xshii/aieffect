@@ -1,19 +1,21 @@
-"""aieffect 命令行接口"""
+"""aieffect 命令行接口
+
+所有命令通过 ServiceContainer（Facade 模式）获取服务实例，
+消除散落的直接 import 和裸构造。
+"""
 
 from typing import Any
 
 import click
 
 from framework import __version__
-from framework.core.case_manager import CaseManager
-from framework.core.dep_manager import DepManager
-from framework.core.history import HistoryManager
-from framework.core.log_checker import LogChecker
-from framework.core.reporter import generate_report
-from framework.core.resource import ResourceManager
-from framework.core.snapshot import SnapshotManager
-from framework.services.run_service import RunRequest, RunService
+from framework.services.container import get_container
 from framework.utils.yaml_io import load_yaml, save_yaml
+
+
+def _svc() -> Any:
+    """获取全局服务容器的快捷方式"""
+    return get_container()
 
 
 @click.group()
@@ -40,15 +42,9 @@ def run(
     param: tuple[str, ...], snapshot: str, case: tuple[str, ...],
 ) -> None:
     """运行测试套件"""
-    # 解析 key=value 参数
-    params: dict[str, str] = {}
-    for p in param:
-        if "=" in p:
-            k, v = p.split("=", 1)
-            params[k.strip()] = v.strip()
-
-    svc = RunService()
-    svc.execute_and_persist(RunRequest(
+    from framework.services.run_service import RunRequest
+    params = _parse_kv_pairs(param)
+    _svc().run.execute_and_persist(RunRequest(
         suite=suite, config_path=config, parallel=parallel,
         environment=env, params=params or None,
         snapshot_id=snapshot,
@@ -61,6 +57,7 @@ def run(
 @click.option("--format", "-f", "fmt", default="html", type=click.Choice(["html", "json", "junit"]))
 def report(result_dir: str, fmt: str) -> None:
     """从结果目录生成测试报告"""
+    from framework.core.reporter import generate_report
     generate_report(result_dir=result_dir, fmt=fmt)
 
 
@@ -70,6 +67,7 @@ def report(result_dir: str, fmt: str) -> None:
 @click.option("--version", default=None, help="指定版本（覆盖注册表默认版本）")
 def fetch(registry: str, name: str | None, version: str | None) -> None:
     """拉取依赖包（本地优先，不存在时远程下载）"""
+    from framework.core.dep_manager import DepManager
     dm = DepManager(registry_path=registry)
     if name:
         path = dm.fetch(name, version=version)
@@ -82,6 +80,7 @@ def fetch(registry: str, name: str | None, version: str | None) -> None:
 @click.option("--registry", default="deps/manifest.yml", help="依赖包清单路径")
 def list_deps(registry: str) -> None:
     """列出所有已注册的依赖包"""
+    from framework.core.dep_manager import DepManager
     dm = DepManager(registry_path=registry)
     packages = dm.list_packages()
     if not packages:
@@ -102,6 +101,7 @@ def list_deps(registry: str) -> None:
 @click.option("--registry", default="deps/manifest.yml", help="依赖包清单路径")
 def resolve_dep(name: str, version: str | None, registry: str) -> None:
     """解析本地已安装版本路径（不下载）"""
+    from framework.core.dep_manager import DepManager
     dm = DepManager(registry_path=registry)
     path = dm.resolve(name, version=version)
     if path:
@@ -119,6 +119,7 @@ def resolve_dep(name: str, version: str | None, registry: str) -> None:
 @click.option("--registry", default="deps/manifest.yml", help="依赖包清单路径")
 def list_versions(name: str, registry: str) -> None:
     """列出依赖包本地已安装的所有版本"""
+    from framework.core.dep_manager import DepManager
     dm = DepManager(registry_path=registry)
     versions = dm.list_local_versions(name)
     current = dm.packages[name].version
@@ -136,8 +137,7 @@ def list_versions(name: str, registry: str) -> None:
 @click.argument("src_path")
 def upload(name: str, version: str, src_path: str) -> None:
     """手动上传包到 Git LFS 存储"""
-    dm = DepManager()
-    dest = dm.upload_lfs(name, version, src_path)
+    dest = _svc().deps.upload_lfs(name, version, src_path)
     click.echo(f"已上传到: {dest}")
 
 
@@ -205,8 +205,7 @@ def cases_group() -> None:
 @click.option("--env", default=None, help="按环境过滤")
 def cases_list(tag: str | None, env: str | None) -> None:
     """列出已注册的用例"""
-    cm = CaseManager()
-    cases = cm.list_cases(tag=tag, environment=env)
+    cases = _svc().cases.list_cases(tag=tag, environment=env)
     if not cases:
         click.echo("没有已注册的用例。")
         return
@@ -230,8 +229,6 @@ def cases_list(tag: str | None, env: str | None) -> None:
 @click.option("--repo-build", default="", help="编译命令")
 def cases_add(**kwargs: Any) -> None:
     """添加用例"""
-    from framework.core.case_manager import CaseManager
-
     repo: dict[str, str] = {}
     if kwargs.get("repo_url"):
         repo = {"url": kwargs["repo_url"], "ref": kwargs.get("repo_ref", "main")}
@@ -239,8 +236,7 @@ def cases_add(**kwargs: Any) -> None:
             if kwargs.get(key):
                 repo[rkey] = kwargs[key]
 
-    cm = CaseManager()
-    cm.add_case(
+    _svc().cases.add_case(
         kwargs["name"], kwargs["cmd"], description=kwargs.get("desc", ""),
         tags=list(kwargs.get("tag", ())),
         timeout=kwargs.get("timeout", 3600),
@@ -253,8 +249,7 @@ def cases_add(**kwargs: Any) -> None:
 @click.argument("name")
 def cases_remove(name: str) -> None:
     """删除用例"""
-    cm = CaseManager()
-    if cm.remove_case(name):
+    if _svc().cases.remove_case(name):
         click.echo(f"用例已删除: {name}")
     else:
         click.echo(f"用例不存在: {name}")
@@ -275,16 +270,14 @@ def snapshot_group() -> None:
 @click.option("--id", "snap_id", default=None, help="自定义快照 ID")
 def snapshot_create(desc: str, snap_id: str | None) -> None:
     """从当前清单创建版本快照"""
-    sm = SnapshotManager()
-    snap = sm.create(description=desc, snapshot_id=snap_id)
+    snap = _svc().snapshots.create(description=desc, snapshot_id=snap_id)
     click.echo(f"快照已创建: {snap['id']}")
 
 
 @snapshot_group.command(name="list")
 def snapshot_list() -> None:
     """列出所有快照"""
-    sm = SnapshotManager()
-    snaps = sm.list_snapshots()
+    snaps = _svc().snapshots.list_snapshots()
     if not snaps:
         click.echo("没有已创建的快照。")
         return
@@ -296,8 +289,7 @@ def snapshot_list() -> None:
 @click.argument("snapshot_id")
 def snapshot_restore(snapshot_id: str) -> None:
     """恢复指定快照到当前清单"""
-    sm = SnapshotManager()
-    if sm.restore(snapshot_id):
+    if _svc().snapshots.restore(snapshot_id):
         click.echo(f"快照已恢复: {snapshot_id}")
     else:
         click.echo(f"快照不存在: {snapshot_id}")
@@ -308,8 +300,7 @@ def snapshot_restore(snapshot_id: str) -> None:
 @click.argument("id_b")
 def snapshot_diff(id_a: str, id_b: str) -> None:
     """比较两个快照的差异"""
-    sm = SnapshotManager()
-    changes = sm.diff(id_a, id_b)
+    changes = _svc().snapshots.diff(id_a, id_b)
     has_changes = False
     for section, items in changes.items():
         if items:
@@ -337,8 +328,7 @@ def history_group() -> None:
 @click.option("--limit", default=20, help="最大记录数")
 def history_list(suite: str | None, env: str | None, limit: int) -> None:
     """列出执行历史"""
-    hm = HistoryManager()
-    records = hm.query(suite=suite, environment=env, limit=limit)
+    records = _svc().history.query(suite=suite, environment=env, limit=limit)
     if not records:
         click.echo("没有执行历史。")
         return
@@ -355,8 +345,7 @@ def history_list(suite: str | None, env: str | None, limit: int) -> None:
 @click.argument("case_name")
 def history_case(case_name: str) -> None:
     """查看单个用例的历史执行汇总"""
-    hm = HistoryManager()
-    summary = hm.case_summary(case_name)
+    summary = _svc().history.case_summary(case_name)
     click.echo(f"用例: {summary['case_name']}")
     click.echo(f"总执行次数: {summary['total_runs']}  通过: {summary['passed']}  "
                f"失败: {summary['failed']}  通过率: {summary['pass_rate']}%")
@@ -379,6 +368,7 @@ def history_case(case_name: str) -> None:
 @click.option("--rules", default="configs/log_rules.yml", help="规则文件路径")
 def check_log(log_file: str, rules: str) -> None:
     """对日志文件执行规则匹配检查"""
+    from framework.core.log_checker import LogChecker
     checker = LogChecker(rules_file=rules)
     result = checker.check_file(log_file)
 
@@ -399,8 +389,7 @@ def check_log(log_file: str, rules: str) -> None:
 @main.command(name="resource")
 def resource_status() -> None:
     """查看资源繁忙度"""
-    rm = ResourceManager()
-    s = rm.status()
+    s = _svc().resources.status()
     click.echo(f"资源容量: {s.capacity}  使用中: {s.in_use}  可用: {s.available}")
     if s.tasks:
         click.echo("当前任务:")
@@ -421,9 +410,7 @@ def repo_group() -> None:
 @repo_group.command(name="list")
 def repo_list() -> None:
     """列出已注册的代码仓"""
-    from framework.services.repo_service import RepoService
-    svc = RepoService()
-    repos = svc.list_all()
+    repos = _svc().repo.list_all()
     if not repos:
         click.echo("没有已注册的代码仓。")
         return
@@ -452,8 +439,6 @@ def repo_list() -> None:
 def repo_add(**kwargs: Any) -> None:
     """注册代码仓（支持 git/tar/api 三种来源）"""
     from framework.core.models import RepoSpec
-    from framework.services.repo_service import RepoService
-    svc = RepoService()
     spec = RepoSpec(
         name=kwargs["name"], source_type=kwargs.get("source_type", "git"),
         url=kwargs.get("url", ""), ref=kwargs.get("ref", "main"),
@@ -462,7 +447,7 @@ def repo_add(**kwargs: Any) -> None:
         setup_cmd=kwargs.get("setup_cmd", ""), build_cmd=kwargs.get("build_cmd", ""),
         deps=list(kwargs.get("dep", ())),
     )
-    svc.register(spec)
+    _svc().repo.register(spec)
     click.echo(f"代码仓已注册: {kwargs['name']} (type={kwargs.get('source_type', 'git')})")
 
 
@@ -470,9 +455,7 @@ def repo_add(**kwargs: Any) -> None:
 @click.argument("name")
 def repo_remove(name: str) -> None:
     """移除代码仓"""
-    from framework.services.repo_service import RepoService
-    svc = RepoService()
-    if svc.remove(name):
+    if _svc().repo.remove(name):
         click.echo(f"代码仓已移除: {name}")
     else:
         click.echo(f"代码仓不存在: {name}")
@@ -483,18 +466,14 @@ def repo_remove(name: str) -> None:
 @click.option("--ref", default="", help="覆盖分支/tag")
 def repo_checkout(name: str, ref: str) -> None:
     """检出代码仓到本地工作目录"""
-    from framework.services.repo_service import RepoService
-    svc = RepoService()
-    ws = svc.checkout(name, ref_override=ref)
+    ws = _svc().repo.checkout(name, ref_override=ref)
     click.echo(f"状态: {ws.status}  路径: {ws.local_path}  commit: {ws.commit_sha}")
 
 
 @repo_group.command(name="workspaces")
 def repo_workspaces() -> None:
     """列出本地已检出的工作目录"""
-    from framework.services.repo_service import RepoService
-    svc = RepoService()
-    wss = svc.list_workspaces()
+    wss = _svc().repo.list_workspaces()
     if not wss:
         click.echo("没有已检出的工作目录。")
         return
@@ -506,9 +485,7 @@ def repo_workspaces() -> None:
 @click.argument("name")
 def repo_clean(name: str) -> None:
     """清理代码仓本地工作目录"""
-    from framework.services.repo_service import RepoService
-    svc = RepoService()
-    count = svc.clean(name)
+    count = _svc().repo.clean(name)
     click.echo(f"已清理 {count} 个工作目录")
 
 
@@ -525,9 +502,7 @@ def env_group() -> None:
 @env_group.command(name="list")
 def env_svc_list() -> None:
     """列出所有已注册的环境"""
-    from framework.services.env_service import EnvService
-    svc = EnvService()
-    envs = svc.list_all()
+    envs = _svc().env.list_all()
     if not envs:
         click.echo("没有已注册的环境。")
         return
@@ -550,7 +525,6 @@ def env_svc_list() -> None:
 def env_add_build(**kwargs: Any) -> None:
     """注册构建环境"""
     from framework.core.models import BuildEnvSpec
-    from framework.services.env_service import EnvService
     variables = _parse_kv_pairs(kwargs.get("var", ()))
     spec = BuildEnvSpec(
         name=kwargs["name"], build_env_type=kwargs.get("env_type", "local"),
@@ -559,8 +533,7 @@ def env_add_build(**kwargs: Any) -> None:
         port=kwargs.get("port", 22), user=kwargs.get("user", ""),
         key_path=kwargs.get("key_path", ""),
     )
-    svc = EnvService()
-    svc.register_build_env(spec)
+    _svc().env.register_build_env(spec)
     click.echo(f"构建环境已注册: {kwargs['name']} (type={kwargs.get('env_type', 'local')})")
 
 
@@ -580,7 +553,6 @@ def env_add_build(**kwargs: Any) -> None:
 def env_add_exe(**kwargs: Any) -> None:
     """注册执行环境"""
     from framework.core.models import ExeEnvSpec
-    from framework.services.env_service import EnvService
     variables = _parse_kv_pairs(kwargs.get("var", ()))
     licenses = _parse_kv_pairs(kwargs.get("lics", ()))
     spec = ExeEnvSpec(
@@ -590,8 +562,7 @@ def env_add_exe(**kwargs: Any) -> None:
         licenses=licenses, timeout=kwargs.get("timeout", 3600),
         build_env_name=kwargs.get("build_env_name", ""),
     )
-    svc = EnvService()
-    svc.register_exe_env(spec)
+    _svc().env.register_exe_env(spec)
     click.echo(f"执行环境已注册: {kwargs['name']} (type={kwargs.get('env_type', 'eda')})")
 
 
@@ -599,9 +570,7 @@ def env_add_exe(**kwargs: Any) -> None:
 @click.argument("name")
 def env_remove_build(name: str) -> None:
     """移除构建环境"""
-    from framework.services.env_service import EnvService
-    svc = EnvService()
-    if svc.remove_build_env(name):
+    if _svc().env.remove_build_env(name):
         click.echo(f"构建环境已移除: {name}")
     else:
         click.echo(f"构建环境不存在: {name}")
@@ -611,9 +580,7 @@ def env_remove_build(name: str) -> None:
 @click.argument("name")
 def env_remove_exe(name: str) -> None:
     """移除执行环境"""
-    from framework.services.env_service import EnvService
-    svc = EnvService()
-    if svc.remove_exe_env(name):
+    if _svc().env.remove_exe_env(name):
         click.echo(f"执行环境已移除: {name}")
     else:
         click.echo(f"执行环境不存在: {name}")
@@ -624,9 +591,7 @@ def env_remove_exe(name: str) -> None:
 @click.option("--exe-env", default="", help="执行环境名称")
 def env_apply(build_env: str, exe_env: str) -> None:
     """申请环境会话"""
-    from framework.services.env_service import EnvService
-    svc = EnvService()
-    session = svc.apply(build_env_name=build_env, exe_env_name=exe_env)
+    session = _svc().env.apply(build_env_name=build_env, exe_env_name=exe_env)
     click.echo(f"会话已创建: id={session.session_id}  状态={session.status}")
     click.echo(f"工作目录: {session.work_dir}")
     click.echo(f"变量数: {len(session.resolved_vars)}")
@@ -638,9 +603,7 @@ def env_apply(build_env: str, exe_env: str) -> None:
 @env_group.command(name="sessions")
 def env_sessions() -> None:
     """列出活跃的环境会话"""
-    from framework.services.env_service import EnvService
-    svc = EnvService()
-    sessions = svc.list_sessions()
+    sessions = _svc().env.list_sessions()
     if not sessions:
         click.echo("没有活跃的会话。")
         return
@@ -655,8 +618,7 @@ def env_sessions() -> None:
 @click.option("--timeout", default=3600, help="超时时间（秒）")
 def env_svc_exec(build_env: str, exe_env: str, cmd: str, timeout: int) -> None:
     """在指定环境中执行命令"""
-    from framework.services.env_service import EnvService
-    svc = EnvService()
+    svc = _svc().env
     session = svc.apply(build_env_name=build_env, exe_env_name=exe_env)
     result = svc.execute_in(session, cmd, timeout=timeout)
     svc.release(session)
@@ -691,9 +653,7 @@ def stimulus_group() -> None:
 @stimulus_group.command(name="list")
 def stimulus_list() -> None:
     """列出已注册的激励源"""
-    from framework.services.stimulus_service import StimulusService
-    svc = StimulusService()
-    items = svc.list_all()
+    items = _svc().stimulus.list_all()
     if not items:
         click.echo("没有已注册的激励。")
         return
@@ -719,14 +679,12 @@ def stimulus_add(
 ) -> None:
     """注册激励源"""
     from framework.core.models import StimulusSpec
-    from framework.services.stimulus_service import StimulusService
     spec = StimulusSpec(
         name=name, source_type=source_type,
         generator_cmd=generator_cmd, storage_key=storage_key,
         external_url=external_url, description=desc,
     )
-    svc = StimulusService()
-    svc.register(spec)
+    _svc().stimulus.register(spec)
     click.echo(f"激励已注册: {name} (type={source_type})")
 
 
@@ -734,9 +692,7 @@ def stimulus_add(
 @click.argument("name")
 def stimulus_remove(name: str) -> None:
     """移除激励"""
-    from framework.services.stimulus_service import StimulusService
-    svc = StimulusService()
-    if svc.remove(name):
+    if _svc().stimulus.remove(name):
         click.echo(f"激励已移除: {name}")
     else:
         click.echo(f"激励不存在: {name}")
@@ -746,9 +702,7 @@ def stimulus_remove(name: str) -> None:
 @click.argument("name")
 def stimulus_acquire(name: str) -> None:
     """获取激励产物"""
-    from framework.services.stimulus_service import StimulusService
-    svc = StimulusService()
-    art = svc.acquire(name)
+    art = _svc().stimulus.acquire(name)
     click.echo(f"状态: {art.status}  路径: {art.local_path}  checksum: {art.checksum}")
 
 
@@ -757,10 +711,8 @@ def stimulus_acquire(name: str) -> None:
 @click.option("--param", multiple=True, help="构造参数 key=value（可多次）")
 def stimulus_construct(name: str, param: tuple[str, ...]) -> None:
     """构造激励（模板+参数）"""
-    from framework.services.stimulus_service import StimulusService
     params = _parse_kv_pairs(param)
-    svc = StimulusService()
-    art = svc.construct(name, params=params)
+    art = _svc().stimulus.construct(name, params=params)
     click.echo(f"状态: {art.status}  路径: {art.local_path}  checksum: {art.checksum}")
 
 
@@ -777,14 +729,12 @@ def stimulus_add_result(
 ) -> None:
     """注册结果激励"""
     from framework.core.models import ResultStimulusSpec
-    from framework.services.stimulus_service import StimulusService
     spec = ResultStimulusSpec(
         name=name, source_type=source_type,
         api_url=api_url, binary_path=binary_path,
         parser_cmd=parser_cmd, description=desc,
     )
-    svc = StimulusService()
-    svc.register_result_stimulus(spec)
+    _svc().stimulus.register_result_stimulus(spec)
     click.echo(f"结果激励已注册: {name} (type={source_type})")
 
 
@@ -792,9 +742,7 @@ def stimulus_add_result(
 @click.argument("name")
 def stimulus_collect_result(name: str) -> None:
     """获取结果激励"""
-    from framework.services.stimulus_service import StimulusService
-    svc = StimulusService()
-    art = svc.collect_result_stimulus(name)
+    art = _svc().stimulus.collect_result_stimulus(name)
     click.echo(f"状态: {art.status}  路径: {art.local_path}")
     if art.message:
         click.echo(f"信息: {art.message}")
@@ -813,14 +761,12 @@ def stimulus_add_trigger(
 ) -> None:
     """注册激励触发器"""
     from framework.core.models import TriggerSpec
-    from framework.services.stimulus_service import StimulusService
     spec = TriggerSpec(
         name=name, trigger_type=trigger_type,
         api_url=api_url, binary_cmd=binary_cmd,
         stimulus_name=stimulus_name, description=desc,
     )
-    svc = StimulusService()
-    svc.register_trigger(spec)
+    _svc().stimulus.register_trigger(spec)
     click.echo(f"触发器已注册: {name} (type={trigger_type})")
 
 
@@ -829,9 +775,7 @@ def stimulus_add_trigger(
 @click.option("--stimulus-path", default="", help="激励文件路径")
 def stimulus_fire(name: str, stimulus_path: str) -> None:
     """触发激励"""
-    from framework.services.stimulus_service import StimulusService
-    svc = StimulusService()
-    result = svc.trigger(name, stimulus_path=stimulus_path)
+    result = _svc().stimulus.trigger(name, stimulus_path=stimulus_path)
     click.echo(f"触发状态: {result.status}")
     if result.message:
         click.echo(f"信息: {result.message}")
@@ -850,9 +794,7 @@ def build_group() -> None:
 @build_group.command(name="list")
 def build_list() -> None:
     """列出已注册的构建配置"""
-    from framework.services.build_service import BuildService
-    svc = BuildService()
-    items = svc.list_all()
+    items = _svc().build.list_all()
     if not items:
         click.echo("没有已注册的构建配置。")
         return
@@ -875,13 +817,11 @@ def build_add(
 ) -> None:
     """注册构建配置"""
     from framework.core.models import BuildSpec
-    from framework.services.build_service import BuildService
     spec = BuildSpec(
         name=name, repo_name=repo_name, setup_cmd=setup_cmd,
         build_cmd=build_cmd, clean_cmd=clean_cmd, output_dir=output_dir,
     )
-    svc = BuildService()
-    svc.register(spec)
+    _svc().build.register(spec)
     click.echo(f"构建已注册: {name}")
 
 
@@ -889,9 +829,7 @@ def build_add(
 @click.argument("name")
 def build_remove(name: str) -> None:
     """移除构建配置"""
-    from framework.services.build_service import BuildService
-    svc = BuildService()
-    if svc.remove(name):
+    if _svc().build.remove(name):
         click.echo(f"构建已移除: {name}")
     else:
         click.echo(f"构建配置不存在: {name}")
@@ -903,9 +841,7 @@ def build_remove(name: str) -> None:
 @click.option("--force", is_flag=True, help="强制重新构建（忽略缓存）")
 def build_run(name: str, repo_ref: str, force: bool) -> None:
     """执行构建（相同分支自动跳过，新分支自动重建）"""
-    from framework.services.build_service import BuildService
-    svc = BuildService()
-    result = svc.build(name, repo_ref=repo_ref, force=force)
+    result = _svc().build.build(name, repo_ref=repo_ref, force=force)
     if result.cached:
         click.echo(f"构建缓存命中: {name} (ref={result.repo_ref}), 跳过重复构建")
     else:
@@ -930,9 +866,7 @@ def result_group() -> None:
 @result_group.command(name="list")
 def result_list() -> None:
     """列出当前结果"""
-    from framework.services.result_service import ResultService
-    svc = ResultService()
-    data = svc.list_results()
+    data = _svc().result.list_results()
     s = data["summary"]
     click.echo(
         f"汇总: total={s['total']} passed={s['passed']} "
@@ -945,9 +879,7 @@ def result_list() -> None:
 @click.argument("run_b")
 def result_compare(run_a: str, run_b: str) -> None:
     """对比两次执行结果"""
-    from framework.services.result_service import ResultService
-    svc = ResultService()
-    diff = svc.compare_runs(run_a, run_b)
+    diff = _svc().result.compare_runs(run_a, run_b)
     if "error" in diff:
         click.echo(f"错误: {diff['error']}")
         return
@@ -960,9 +892,7 @@ def result_compare(run_a: str, run_b: str) -> None:
 @result_group.command(name="clean")
 def result_clean() -> None:
     """清理结果目录"""
-    from framework.services.result_service import ResultService
-    svc = ResultService()
-    count = svc.clean_results()
+    count = _svc().result.clean_results()
     click.echo(f"已清理 {count} 个结果文件")
 
 
@@ -980,14 +910,13 @@ def result_upload(
     rsync_target: str, ssh_key: str,
 ) -> None:
     """上传结果（本地/API/rsync）"""
-    from framework.services.result_service import ResultService, StorageConfig
+    from framework.services.result_service import StorageConfig
     cfg = StorageConfig(
         upload_type=upload_type, api_url=api_url,
         api_token=api_token, rsync_target=rsync_target,
         ssh_key=ssh_key,
     )
-    svc = ResultService()
-    result = svc.upload(config=cfg)
+    result = _svc().result.upload(config=cfg)
     click.echo(f"上传状态: {result['status']}")
     if result.get("message"):
         click.echo(f"信息: {result['message']}")

@@ -27,12 +27,18 @@ from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 
+from framework.services.container import get_container
 from framework.web.blueprints.builds_bp import builds_bp
 from framework.web.blueprints.envs_bp import envs_bp
 from framework.web.blueprints.repos_bp import repos_bp
 from framework.web.blueprints.stimuli_bp import stimuli_bp
 
 logger = logging.getLogger(__name__)
+
+
+def _svc():  # type: ignore[no-untyped-def]
+    """获取全局服务容器的快捷方式"""
+    return get_container()
 
 MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB
 
@@ -154,9 +160,7 @@ def api_upload_dep():
 
 @app.route("/api/cases", methods=["GET"])
 def api_cases_list():
-    from framework.core.case_manager import CaseManager
-    cm = CaseManager()
-    return jsonify(cases=cm.list_cases(
+    return jsonify(cases=_svc().cases.list_cases(
         tag=request.args.get("tag"),
         environment=request.args.get("environment"),
     ))
@@ -164,8 +168,7 @@ def api_cases_list():
 
 @app.route("/api/cases/<name>", methods=["GET"])
 def api_cases_get(name: str):
-    from framework.core.case_manager import CaseManager
-    case = CaseManager().get_case(name)
+    case = _svc().cases.get_case(name)
     if case is None:
         return jsonify(error="用例不存在"), 404
     return jsonify(case=case)
@@ -173,13 +176,12 @@ def api_cases_get(name: str):
 
 @app.route("/api/cases", methods=["POST"])
 def api_cases_add():
-    from framework.core.case_manager import CaseManager
     body = request.get_json(silent=True) or {}
     name = body.get("name", "")
     cmd = body.get("cmd", "")
     if not name or not cmd:
         return jsonify(error="需要提供 name 和 cmd"), 400
-    case = CaseManager().add_case(
+    case = _svc().cases.add_case(
         name, cmd,
         description=body.get("description", ""),
         tags=body.get("tags", []),
@@ -191,9 +193,8 @@ def api_cases_add():
 
 @app.route("/api/cases/<name>", methods=["PUT"])
 def api_cases_update(name: str):
-    from framework.core.case_manager import CaseManager
     body = request.get_json(silent=True) or {}
-    updated = CaseManager().update_case(name, **body)
+    updated = _svc().cases.update_case(name, **body)
     if updated is None:
         return jsonify(error="用例不存在"), 404
     return jsonify(message=f"用例已更新: {name}", case=updated)
@@ -201,8 +202,7 @@ def api_cases_update(name: str):
 
 @app.route("/api/cases/<name>", methods=["DELETE"])
 def api_cases_delete(name: str):
-    from framework.core.case_manager import CaseManager
-    if CaseManager().remove_case(name):
+    if _svc().cases.remove_case(name):
         return jsonify(message=f"用例已删除: {name}")
     return jsonify(error="用例不存在"), 404
 
@@ -214,15 +214,13 @@ def api_cases_delete(name: str):
 
 @app.route("/api/snapshots", methods=["GET"])
 def api_snapshots_list():
-    from framework.core.snapshot import SnapshotManager
-    return jsonify(snapshots=SnapshotManager().list_snapshots())
+    return jsonify(snapshots=_svc().snapshots.list_snapshots())
 
 
 @app.route("/api/snapshots", methods=["POST"])
 def api_snapshots_create():
-    from framework.core.snapshot import SnapshotManager
     body = request.get_json(silent=True) or {}
-    snap = SnapshotManager().create(
+    snap = _svc().snapshots.create(
         description=body.get("description", ""),
         snapshot_id=body.get("id"),
     )
@@ -231,8 +229,7 @@ def api_snapshots_create():
 
 @app.route("/api/snapshots/<snapshot_id>", methods=["GET"])
 def api_snapshots_get(snapshot_id: str):
-    from framework.core.snapshot import SnapshotManager
-    snap = SnapshotManager().get(snapshot_id)
+    snap = _svc().snapshots.get(snapshot_id)
     if snap is None:
         return jsonify(error="快照不存在"), 404
     return jsonify(snapshot=snap)
@@ -240,16 +237,14 @@ def api_snapshots_get(snapshot_id: str):
 
 @app.route("/api/snapshots/<snapshot_id>/restore", methods=["POST"])
 def api_snapshots_restore(snapshot_id: str):
-    from framework.core.snapshot import SnapshotManager
-    if SnapshotManager().restore(snapshot_id):
+    if _svc().snapshots.restore(snapshot_id):
         return jsonify(message=f"快照已恢复: {snapshot_id}")
     return jsonify(error="快照不存在"), 404
 
 
 @app.route("/api/history", methods=["GET"])
 def api_history_list():
-    from framework.core.history import HistoryManager
-    return jsonify(records=HistoryManager().query(
+    return jsonify(records=_svc().history.query(
         suite=request.args.get("suite"),
         environment=request.args.get("environment"),
         case_name=request.args.get("case_name"),
@@ -259,18 +254,16 @@ def api_history_list():
 
 @app.route("/api/history/case/<case_name>", methods=["GET"])
 def api_history_case(case_name: str):
-    from framework.core.history import HistoryManager
-    return jsonify(summary=HistoryManager().case_summary(case_name))
+    return jsonify(summary=_svc().history.case_summary(case_name))
 
 
 @app.route("/api/history/submit", methods=["POST"])
 def api_history_submit():
-    from framework.core.history import HistoryManager
     body = request.get_json(silent=True) or {}
     if "suite" not in body or "results" not in body:
         return jsonify(error="需要提供 suite 和 results"), 400
     try:
-        entry = HistoryManager().submit_external(body)
+        entry = _svc().history.submit_external(body)
     except ValueError as e:
         return jsonify(error=str(e)), 400
     return jsonify(message="执行结果已录入", entry=entry)
@@ -306,8 +299,7 @@ def api_check_log():
 
 @app.route("/api/resource", methods=["GET"])
 def api_resource_status():
-    from framework.core.resource import ResourceManager
-    return jsonify(asdict(ResourceManager().status()))
+    return jsonify(asdict(_svc().resources.status()))
 
 
 @app.route("/api/storage/<namespace>", methods=["GET"])
@@ -354,28 +346,26 @@ def api_storage_put(namespace: str, key: str):
 
 @app.route("/api/results/compare", methods=["GET"])
 def api_results_compare():
-    from framework.services.result_service import ResultService
     run_a = request.args.get("run_a", "")
     run_b = request.args.get("run_b", "")
     if not run_a or not run_b:
         return jsonify(error="需要提供 run_a 和 run_b"), 400
-    return jsonify(ResultService().compare_runs(run_a, run_b))
+    return jsonify(_svc().result.compare_runs(run_a, run_b))
 
 
 @app.route("/api/results/export", methods=["POST"])
 def api_results_export():
-    from framework.services.result_service import ResultService
     body = request.get_json(silent=True) or {}
-    path = ResultService().export(fmt=body.get("format", "html"))
+    path = _svc().result.export(fmt=body.get("format", "html"))
     return jsonify(message="报告已生成", path=path)
 
 
 @app.route("/api/results/upload", methods=["POST"])
 def api_results_upload():
-    from framework.services.result_service import ResultService, StorageConfig
+    from framework.services.result_service import StorageConfig
     body = request.get_json(silent=True) or {}
     cfg = StorageConfig.from_dict(body.get("storage", {}))
-    result = ResultService().upload(config=cfg, run_id=body.get("run_id", ""))
+    result = _svc().result.upload(config=cfg, run_id=body.get("run_id", ""))
     return jsonify(result)
 
 
