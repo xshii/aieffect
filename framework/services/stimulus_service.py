@@ -22,17 +22,15 @@ if TYPE_CHECKING:
 
 from framework.core.exceptions import CaseNotFoundError, ValidationError
 from framework.core.models import (
-    RESULT_STIMULUS_API,
-    RESULT_STIMULUS_BINARY,
-    TRIGGER_API,
-    TRIGGER_BINARY,
     RepoSpec,
     ResultStimulusArtifact,
     ResultStimulusSpec,
+    ResultStimulusType,
     StimulusArtifact,
     StimulusSpec,
     TriggerResult,
     TriggerSpec,
+    TriggerType,
 )
 from framework.core.registry import YamlRegistry
 
@@ -307,7 +305,7 @@ class StimulusService(YamlRegistry):
         """注册结果激励"""
         if not spec.name:
             raise ValidationError("结果激励 name 为必填")
-        if spec.source_type not in (RESULT_STIMULUS_API, RESULT_STIMULUS_BINARY):
+        if spec.source_type not in (ResultStimulusType.API, ResultStimulusType.BINARY):
             raise ValidationError(f"不支持的结果激励类型: {spec.source_type}")
         entry: dict[str, Any] = {
             "source_type": spec.source_type,
@@ -329,7 +327,7 @@ class StimulusService(YamlRegistry):
             return None
         return ResultStimulusSpec(
             name=name,
-            source_type=entry.get("source_type", RESULT_STIMULUS_API),
+            source_type=entry.get("source_type", ResultStimulusType.API),
             api_url=entry.get("api_url", ""),
             api_token=entry.get("api_token", ""),
             binary_path=entry.get("binary_path", ""),
@@ -362,7 +360,7 @@ class StimulusService(YamlRegistry):
         dest.mkdir(parents=True, exist_ok=True)
 
         try:
-            if spec.source_type == RESULT_STIMULUS_API:
+            if spec.source_type == ResultStimulusType.API:
                 return self._collect_via_api(spec, dest)
             return self._collect_via_binary(spec, dest)
         except (OSError, RuntimeError, subprocess.SubprocessError) as e:
@@ -435,7 +433,7 @@ class StimulusService(YamlRegistry):
         """注册激励触发器"""
         if not spec.name:
             raise ValidationError("触发器 name 为必填")
-        if spec.trigger_type not in (TRIGGER_API, TRIGGER_BINARY):
+        if spec.trigger_type not in (TriggerType.API, TriggerType.BINARY):
             raise ValidationError(f"不支持的触发类型: {spec.trigger_type}")
         entry: dict[str, Any] = {
             "trigger_type": spec.trigger_type,
@@ -457,7 +455,7 @@ class StimulusService(YamlRegistry):
             return None
         return TriggerSpec(
             name=name,
-            trigger_type=entry.get("trigger_type", TRIGGER_API),
+            trigger_type=entry.get("trigger_type", TriggerType.API),
             api_url=entry.get("api_url", ""),
             api_token=entry.get("api_token", ""),
             binary_cmd=entry.get("binary_cmd", ""),
@@ -504,7 +502,7 @@ class StimulusService(YamlRegistry):
             stimulus_path = art.local_path
 
         try:
-            if spec.trigger_type == TRIGGER_API:
+            if spec.trigger_type == TriggerType.API:
                 return self._trigger_via_api(spec, stimulus_path, payload)
             return self._trigger_via_binary(spec, stimulus_path)
         except (OSError, RuntimeError, subprocess.SubprocessError) as e:
