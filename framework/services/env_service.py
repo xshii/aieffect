@@ -29,21 +29,12 @@ from typing import Any
 
 from framework.core.exceptions import CaseNotFoundError, ValidationError
 from framework.core.models import (
-    BUILD_ENV_LOCAL,
-    BUILD_ENV_REMOTE,
-    BUILD_ENV_TYPES,
-    ENV_APPLIED,
-    ENV_INVALID,
-    ENV_RELEASED,
-    ENV_TIMEOUT,
-    EXE_ENV_EDA,
-    EXE_ENV_FPGA,
-    EXE_ENV_SAME_AS_BUILD,
-    EXE_ENV_SILICON,
-    EXE_ENV_TYPES,
     BuildEnvSpec,
+    BuildEnvType,
     EnvSession,
+    EnvStatus,
     ExeEnvSpec,
+    ExeEnvType,
     ToolSpec,
 )
 from framework.core.registry import YamlRegistry
@@ -69,14 +60,14 @@ class BaseEnvHandler(ABC):
 
     def timeout(self, session: EnvSession) -> EnvSession:
         """标记超时"""
-        session.status = ENV_TIMEOUT
+        session.status = EnvStatus.TIMEOUT
         session.message = "环境超时"
         logger.warning("环境超时: %s", session.name)
         return session
 
     def invalid(self, session: EnvSession) -> EnvSession:
         """标记失效"""
-        session.status = ENV_INVALID
+        session.status = EnvStatus.INVALID
         session.message = "环境已失效"
         logger.warning("环境失效: %s", session.name)
         return session
@@ -93,18 +84,18 @@ class LocalBuildHandler(BaseEnvHandler):
     def apply(self, session: EnvSession) -> EnvSession:
         spec = session.build_env
         if spec is None:
-            session.status = ENV_INVALID
+            session.status = EnvStatus.INVALID
             return session
         work = spec.work_dir or str(Path("data/workspaces") / session.name)
         Path(work).mkdir(parents=True, exist_ok=True)
         session.work_dir = work
-        session.status = ENV_APPLIED
+        session.status = EnvStatus.APPLIED
         session.resolved_vars.update(spec.variables)
         logger.info("本地构建环境已申请: %s -> %s", session.name, work)
         return session
 
     def release(self, session: EnvSession) -> EnvSession:
-        session.status = ENV_RELEASED
+        session.status = EnvStatus.RELEASED
         logger.info("本地构建环境已释放: %s", session.name)
         return session
 
@@ -115,14 +106,14 @@ class RemoteBuildHandler(BaseEnvHandler):
     def apply(self, session: EnvSession) -> EnvSession:
         spec = session.build_env
         if spec is None or not spec.host:
-            session.status = ENV_INVALID
+            session.status = EnvStatus.INVALID
             session.message = "远端构建环境缺少 host"
             return session
         work = spec.work_dir or os.path.join(
             tempfile.gettempdir(), "aieffect", session.name,
         )
         session.work_dir = work
-        session.status = ENV_APPLIED
+        session.status = EnvStatus.APPLIED
         session.resolved_vars.update(spec.variables)
         session.resolved_vars["REMOTE_HOST"] = spec.host
         session.resolved_vars["REMOTE_PORT"] = str(spec.port)
@@ -132,7 +123,7 @@ class RemoteBuildHandler(BaseEnvHandler):
         return session
 
     def release(self, session: EnvSession) -> EnvSession:
-        session.status = ENV_RELEASED
+        session.status = EnvStatus.RELEASED
         logger.info("远端构建环境已释放: %s", session.name)
         return session
 
@@ -150,11 +141,11 @@ class WebApiExeHandler(BaseEnvHandler):
     def apply(self, session: EnvSession) -> EnvSession:
         spec = session.exe_env
         if spec is None or not spec.api_url:
-            session.status = ENV_INVALID
+            session.status = EnvStatus.INVALID
             session.message = f"{self.env_type_label} 缺少 api_url"
             return session
 
-        session.status = ENV_APPLIED
+        session.status = EnvStatus.APPLIED
         session.resolved_vars.update(spec.variables)
         session.resolved_vars["API_URL"] = spec.api_url
         if spec.api_token:
@@ -176,7 +167,7 @@ class WebApiExeHandler(BaseEnvHandler):
         return session
 
     def release(self, session: EnvSession) -> EnvSession:
-        session.status = ENV_RELEASED
+        session.status = EnvStatus.RELEASED
         logger.info("%s 执行环境已释放: %s", self.env_type_label, session.name)
         return session
 
@@ -201,15 +192,15 @@ class SameAsBuildExeHandler(BaseEnvHandler):
 
     def apply(self, session: EnvSession) -> EnvSession:
         if session.build_env is None:
-            session.status = ENV_INVALID
+            session.status = EnvStatus.INVALID
             session.message = "same_as_build 需要关联构建环境"
             return session
-        session.status = ENV_APPLIED
+        session.status = EnvStatus.APPLIED
         logger.info("同构建执行环境已申请: %s", session.name)
         return session
 
     def release(self, session: EnvSession) -> EnvSession:
-        session.status = ENV_RELEASED
+        session.status = EnvStatus.RELEASED
         logger.info("同构建执行环境已释放: %s", session.name)
         return session
 
@@ -219,15 +210,15 @@ class SameAsBuildExeHandler(BaseEnvHandler):
 # =========================================================================
 
 _BUILD_HANDLERS: dict[str, type[BaseEnvHandler]] = {
-    BUILD_ENV_LOCAL: LocalBuildHandler,
-    BUILD_ENV_REMOTE: RemoteBuildHandler,
+    BuildEnvType.LOCAL: LocalBuildHandler,
+    BuildEnvType.REMOTE: RemoteBuildHandler,
 }
 
 _EXE_HANDLERS: dict[str, type[BaseEnvHandler]] = {
-    EXE_ENV_EDA: EdaExeHandler,
-    EXE_ENV_FPGA: FpgaExeHandler,
-    EXE_ENV_SILICON: SiliconExeHandler,
-    EXE_ENV_SAME_AS_BUILD: SameAsBuildExeHandler,
+    ExeEnvType.EDA: EdaExeHandler,
+    ExeEnvType.FPGA: FpgaExeHandler,
+    ExeEnvType.SILICON: SiliconExeHandler,
+    ExeEnvType.SAME_AS_BUILD: SameAsBuildExeHandler,
 }
 
 
@@ -279,7 +270,7 @@ class EnvService(YamlRegistry):
         """注册构建环境"""
         if not spec.name:
             raise ValidationError("构建环境 name 为必填")
-        if spec.build_env_type not in BUILD_ENV_TYPES:
+        if spec.build_env_type not in BuildEnvType.__members__.values():
             raise ValidationError(f"不支持的构建环境类型: {spec.build_env_type}")
         entry: dict[str, Any] = {
             "build_env_type": spec.build_env_type,
@@ -300,7 +291,7 @@ class EnvService(YamlRegistry):
             return None
         return BuildEnvSpec(
             name=name,
-            build_env_type=entry.get("build_env_type", BUILD_ENV_LOCAL),
+            build_env_type=entry.get("build_env_type", BuildEnvType.LOCAL),
             description=entry.get("description", ""),
             work_dir=entry.get("work_dir", ""),
             variables=entry.get("variables", {}),
@@ -327,7 +318,7 @@ class EnvService(YamlRegistry):
         """注册执行环境"""
         if not spec.name:
             raise ValidationError("执行环境 name 为必填")
-        if spec.exe_env_type not in EXE_ENV_TYPES:
+        if spec.exe_env_type not in ExeEnvType.__members__.values():
             raise ValidationError(f"不支持的执行环境类型: {spec.exe_env_type}")
         tools_dict: dict[str, dict[str, Any]] = {}
         for tname, tool in spec.tools.items():
@@ -363,7 +354,7 @@ class EnvService(YamlRegistry):
             )
         return ExeEnvSpec(
             name=name,
-            exe_env_type=entry.get("exe_env_type", EXE_ENV_EDA),
+            exe_env_type=entry.get("exe_env_type", ExeEnvType.EDA),
             description=entry.get("description", ""),
             api_url=entry.get("api_url", ""),
             api_token=entry.get("api_token", ""),
@@ -407,7 +398,7 @@ class EnvService(YamlRegistry):
 
         if build_env_name:
             session = self._apply_build_env(session, build_env_name)
-            if session.status != ENV_APPLIED:
+            if session.status != EnvStatus.APPLIED:
                 return session
 
         if exe_env_name:
@@ -435,7 +426,7 @@ class EnvService(YamlRegistry):
         if exe_spec is None:
             raise CaseNotFoundError(f"执行环境不存在: {exe_env_name}")
         session.exe_env = exe_spec
-        if exe_spec.exe_env_type == EXE_ENV_SAME_AS_BUILD and not session.build_env:
+        if exe_spec.exe_env_type == ExeEnvType.SAME_AS_BUILD and not session.build_env:
             session = self._auto_apply_linked_build(session, exe_spec)
         handler = _get_exe_handler(exe_spec.exe_env_type)
         return handler.apply(session)
@@ -460,19 +451,19 @@ class EnvService(YamlRegistry):
         if session.build_env:
             h = _get_build_handler(session.build_env.build_env_type)
             session = h.release(session)
-        session.status = ENV_RELEASED
+        session.status = EnvStatus.RELEASED
         self._sessions.pop(session.session_id, None)
         return session
 
     def timeout(self, session: EnvSession) -> EnvSession:
         """标记超时"""
-        session.status = ENV_TIMEOUT
+        session.status = EnvStatus.TIMEOUT
         self._sessions.pop(session.session_id, None)
         return session
 
     def invalid(self, session: EnvSession) -> EnvSession:
         """标记失效"""
-        session.status = ENV_INVALID
+        session.status = EnvStatus.INVALID
         self._sessions.pop(session.session_id, None)
         return session
 
@@ -491,7 +482,7 @@ class EnvService(YamlRegistry):
         self, session: EnvSession, cmd: str, *, timeout: int = 3600,
     ) -> dict[str, Any]:
         """在已申请的环境会话中执行命令"""
-        if session.status != ENV_APPLIED:
+        if session.status != EnvStatus.APPLIED:
             raise ValidationError(f"环境会话状态不可用: {session.status}")
 
         env = {**os.environ, **session.resolved_vars}

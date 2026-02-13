@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 # =========================================================================
@@ -175,24 +176,27 @@ class RepoWorkspace:
 # 环境领域模型
 # =========================================================================
 
-# 构建环境类型
-BUILD_ENV_LOCAL = "local"
-BUILD_ENV_REMOTE = "remote"
-BUILD_ENV_TYPES = (BUILD_ENV_LOCAL, BUILD_ENV_REMOTE)
+class BuildEnvType(str, Enum):
+    """构建环境类型"""
+    LOCAL = "local"
+    REMOTE = "remote"
 
-# 执行环境类型
-EXE_ENV_EDA = "eda"
-EXE_ENV_FPGA = "fpga"
-EXE_ENV_SILICON = "silicon"
-EXE_ENV_SAME_AS_BUILD = "same_as_build"
-EXE_ENV_TYPES = (EXE_ENV_EDA, EXE_ENV_FPGA, EXE_ENV_SILICON, EXE_ENV_SAME_AS_BUILD)
 
-# 环境会话状态
-ENV_PENDING = "pending"
-ENV_APPLIED = "applied"
-ENV_TIMEOUT = "timeout"
-ENV_RELEASED = "released"
-ENV_INVALID = "invalid"
+class ExeEnvType(str, Enum):
+    """执行环境类型"""
+    EDA = "eda"
+    FPGA = "fpga"
+    SILICON = "silicon"
+    SAME_AS_BUILD = "same_as_build"
+
+
+class EnvStatus(str, Enum):
+    """环境会话状态"""
+    PENDING = "pending"
+    APPLIED = "applied"
+    TIMEOUT = "timeout"
+    RELEASED = "released"
+    INVALID = "invalid"
 
 
 @dataclass
@@ -210,7 +214,7 @@ class BuildEnvSpec:
     """构建环境定义"""
 
     name: str
-    build_env_type: str = BUILD_ENV_LOCAL  # local | remote
+    build_env_type: str = BuildEnvType.LOCAL  # local | remote
     description: str = ""
 
     # 通用
@@ -229,7 +233,7 @@ class ExeEnvSpec:
     """执行环境定义"""
 
     name: str
-    exe_env_type: str = EXE_ENV_EDA  # eda | fpga | silicon | same_as_build
+    exe_env_type: str = ExeEnvType.EDA  # eda | fpga | silicon | same_as_build
     description: str = ""
 
     # 通用
@@ -256,7 +260,7 @@ class EnvSession:
     exe_env: ExeEnvSpec | None = None
     resolved_vars: dict[str, str] = field(default_factory=dict)
     work_dir: str = ""
-    status: str = ENV_PENDING
+    status: str = EnvStatus.PENDING
     session_id: str = ""
     message: str = ""
 
@@ -292,9 +296,10 @@ class StimulusArtifact:
     status: str = "pending"  # pending | ready | error
 
 
-# 结果激励类型
-RESULT_STIMULUS_API = "api"
-RESULT_STIMULUS_BINARY = "binary"
+class ResultStimulusType(str, Enum):
+    """结果激励类型"""
+    API = "api"
+    BINARY = "binary"
 
 
 @dataclass
@@ -307,7 +312,7 @@ class ResultStimulusSpec:
     """
 
     name: str
-    source_type: str = RESULT_STIMULUS_API  # api | binary
+    source_type: str = ResultStimulusType.API  # api | binary
     api_url: str = ""          # API 地址（api 类型）
     api_token: str = ""        # API 认证令牌
     binary_path: str = ""      # 二进制文件路径（binary 类型）
@@ -326,9 +331,10 @@ class ResultStimulusArtifact:
     message: str = ""
 
 
-# 激励触发类型
-TRIGGER_API = "api"
-TRIGGER_BINARY = "binary"
+class TriggerType(str, Enum):
+    """激励触发类型"""
+    API = "api"
+    BINARY = "binary"
 
 
 @dataclass
@@ -341,7 +347,7 @@ class TriggerSpec:
     """
 
     name: str
-    trigger_type: str = TRIGGER_API  # api | binary
+    trigger_type: str = TriggerType.API  # api | binary
     api_url: str = ""          # API 地址（api 类型）
     api_token: str = ""        # API 认证令牌
     binary_cmd: str = ""       # 二进制执行命令（binary 类型）
