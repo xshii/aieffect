@@ -22,6 +22,15 @@ from typing import Any
 
 from framework.core.history import HistoryManager
 from framework.core.models import SuiteResult, summarize_statuses
+from framework.core.result_models import (
+    CompareError,
+    CompareResponse,
+    CompareResult,
+    ListResultsResponse,
+    RunInfo,
+    UploadResult,
+    dict_to_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +173,7 @@ class ResultService:
         result: dict[str, Any] = json.loads(f.read_text(encoding="utf-8"))
         return result
 
-    def list_results(self) -> dict[str, Any]:
+    def list_results(self) -> ListResultsResponse:
         """列出所有结果及汇总"""
         results: list[dict[str, Any]] = []
         if self.result_dir.exists():
@@ -177,10 +186,11 @@ class ResultService:
                     )
                 except json.JSONDecodeError:
                     pass
-        return {
-            "summary": summarize_statuses(results),
-            "results": results,
-        }
+        summary_dict = summarize_statuses(results)
+        return ListResultsResponse(
+            summary=dict_to_summary(summary_dict),
+            results=results,
+        )
 
     def query_history(
         self, *, suite: str | None = None, environment: str | None = None,
@@ -198,25 +208,32 @@ class ResultService:
 
     # ---- 对比 ----
 
-    def compare_runs(self, run_id_a: str, run_id_b: str) -> dict[str, Any]:
+    def compare_runs(self, run_id_a: str, run_id_b: str) -> CompareResponse:
         """对比两次执行结果"""
-        rec_a, rec_b = self._find_records(run_id_a, run_id_b)
+        # 输入验证
+        if not run_id_a or not run_id_b:
+            return CompareError(error="run_id 不能为空")
+        if run_id_a == run_id_b:
+            return CompareError(error="不能对比相同的 run_id")
 
+        # 查找记录
+        rec_a, rec_b = self._find_records(run_id_a, run_id_b)
         if rec_a is None or rec_b is None:
             missing = [
                 rid for rid, rec in ((run_id_a, rec_a), (run_id_b, rec_b))
                 if rec is None
             ]
-            return {"error": f"未找到记录: {', '.join(missing)}"}
+            return CompareError(error=f"未找到记录: {', '.join(missing)}")
 
+        # 计算差异
         diffs, total = self._compute_diffs(rec_a, rec_b, run_id_a, run_id_b)
-        return {
-            "run_a": {"run_id": run_id_a, "summary": rec_a.get("summary", {})},
-            "run_b": {"run_id": run_id_b, "summary": rec_b.get("summary", {})},
-            "diffs": diffs,
-            "total_cases": total,
-            "changed_cases": len(diffs),
-        }
+        return CompareResult(
+            run_a=RunInfo(run_id=run_id_a, summary=rec_a.get("summary", {})),
+            run_b=RunInfo(run_id=run_id_b, summary=rec_b.get("summary", {})),
+            diffs=diffs,
+            total_cases=total,
+            changed_cases=len(diffs),
+        )
 
     def _find_records(
         self, run_id_a: str, run_id_b: str,
@@ -265,7 +282,7 @@ class ResultService:
         self, *,
         config: StorageConfig | None = None,
         run_id: str = "",
-    ) -> dict[str, Any]:
+    ) -> UploadResult:
         """上传结果到远端存储
 
         支持三种上传方式:
@@ -280,32 +297,43 @@ class ResultService:
         cfg = config or self.storage_config
 
         if cfg.upload_type == UPLOAD_LOCAL:
-            return {
-                "status": "success",
-                "type": "local",
-                "path": str(self.result_dir),
-                "message": "结果已保存在本地",
-            }
+            return UploadResult(
+                status="success",
+                type="local",
+                path=str(self.result_dir),
+                message="结果已保存在本地",
+            )
         if cfg.upload_type == UPLOAD_API:
             return self._upload_via_api(cfg, run_id)
         if cfg.upload_type == UPLOAD_RSYNC:
             return self._upload_via_rsync(cfg)
 
-        return {"status": "error", "message": f"不支持的上传类型: {cfg.upload_type}"}
+        return UploadResult(
+            status="error",
+            type=cfg.upload_type,
+            message=f"不支持的上传类型: {cfg.upload_type}",
+        )
 
     def _upload_via_api(
         self, cfg: StorageConfig, run_id: str,
-    ) -> dict[str, Any]:
+    ) -> UploadResult:
         """通过 API 上传结果到云端"""
         if not cfg.api_url:
-            return {"status": "error", "message": "API 上传需要配置 api_url"}
+            return UploadResult(
+                status="error",
+                type="api",
+                message="API 上传需要配置 api_url",
+            )
 
         from framework.utils.net import validate_url_scheme
         validate_url_scheme(cfg.api_url, context="result upload")
 
         import urllib.error
         import urllib.request
-        data = self.list_results()
+
+        # 获取结果并序列化
+        results_obj = self.list_results()
+        data = results_obj.to_dict()
         data["run_id"] = run_id
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
 
@@ -319,17 +347,44 @@ class ResultService:
         try:
             with urllib.request.urlopen(req) as resp:  # nosec B310
                 resp_data = json.loads(resp.read().decode("utf-8"))
-            return {
-                "status": "success", "type": "api",
-                "response": resp_data,
-            }
-        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as e:
-            return {"status": "error", "type": "api", "message": str(e)}
+            return UploadResult(
+                status="success",
+                type="api",
+                response=resp_data,
+            )
+        except urllib.error.HTTPError as e:
+            return UploadResult(
+                status="error",
+                type="api",
+                message=f"HTTP 错误 {e.code}: {e.reason}",
+            )
+        except urllib.error.URLError as e:
+            return UploadResult(
+                status="error",
+                type="api",
+                message=f"网络错误: {e.reason}",
+            )
+        except json.JSONDecodeError as e:
+            return UploadResult(
+                status="error",
+                type="api",
+                message=f"响应格式错误: {e}",
+            )
+        except (OSError, ValueError) as e:
+            return UploadResult(
+                status="error",
+                type="api",
+                message=str(e),
+            )
 
-    def _upload_via_rsync(self, cfg: StorageConfig) -> dict[str, Any]:
+    def _upload_via_rsync(self, cfg: StorageConfig) -> UploadResult:
         """通过 rsync 上传结果到服务器"""
         if not cfg.rsync_target:
-            return {"status": "error", "message": "rsync 上传需要配置 rsync_target"}
+            return UploadResult(
+                status="error",
+                type="rsync",
+                message="rsync 上传需要配置 rsync_target",
+            )
 
         cmd_parts = self._build_rsync_cmd(cfg)
         logger.info("rsync 上传: %s", " ".join(cmd_parts))
@@ -340,10 +395,17 @@ class ResultService:
                 check=False, timeout=600,
             )
         except subprocess.TimeoutExpired:
-            return {"status": "error", "type": "rsync", "message": "rsync 超时 (600s)"}
+            return UploadResult(
+                status="error",
+                type="rsync",
+                message="rsync 超时 (600s)",
+            )
         except FileNotFoundError:
-            return {"status": "error", "type": "rsync",
-                    "message": "rsync 未安装，请先安装: apt install rsync / yum install rsync"}
+            return UploadResult(
+                status="error",
+                type="rsync",
+                message="rsync 未安装，请先安装: apt install rsync / yum install rsync",
+            )
 
         return self._parse_rsync_result(r, cfg.rsync_target)
 
@@ -359,24 +421,36 @@ class ResultService:
         return cmd_parts
 
     @staticmethod
-    def _parse_rsync_result(r: subprocess.CompletedProcess[str], target: str) -> dict[str, Any]:
+    def _parse_rsync_result(r: subprocess.CompletedProcess[str], target: str) -> UploadResult:
         """解析 rsync 结果"""
         if r.returncode == 0:
-            return {"status": "success", "type": "rsync", "target": target}
+            return UploadResult(
+                status="success",
+                type="rsync",
+                target=target,
+            )
+
+        # 权限错误
         if r.returncode in (12, 23) or "Permission denied" in r.stderr:
-            return {
-                "status": "error", "type": "rsync",
-                "message": f"权限不足 (rc={r.returncode}): {r.stderr[:300]}",
-                "hint": (
+            return UploadResult(
+                status="error",
+                type="rsync",
+                message=f"权限不足 (rc={r.returncode}): {r.stderr[:300]}",
+                hint=(
                     "请检查权限配置:\n"
                     "  1. 确认 SSH 密钥已添加: ssh_key 参数或 ssh-add\n"
                     "  2. 确认目标目录写权限: ssh user@host 'ls -la /target'\n"
                     "  3. 确认 rsync 已安装: which rsync\n"
                     "  4. 配置免密登录: ssh-copy-id user@host"
                 ),
-            }
-        return {"status": "error", "type": "rsync",
-                "message": f"rsync 失败 (rc={r.returncode}): {r.stderr[:500]}"}
+            )
+
+        # 其他错误
+        return UploadResult(
+            status="error",
+            type="rsync",
+            message=f"rsync 失败 (rc={r.returncode}): {r.stderr[:500]}",
+        )
 
     # ---- 清理 ----
 
