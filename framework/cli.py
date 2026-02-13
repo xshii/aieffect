@@ -149,6 +149,46 @@ def dashboard(port: int) -> None:
     run_server(port=port)
 
 
+def _show_deps(base: str) -> None:
+    """显示当前依赖版本"""
+    deps = load_yaml(base).get("dependencies", {})
+    if not deps:
+        click.echo("未定义任何依赖。")
+        return
+    for name, info in sorted(deps.items()):
+        ver = info.get("version", "未设置") if isinstance(info, dict) else info
+        click.echo(f"  {name}: {ver}")
+
+
+def _apply_override_file(base: str, override: str) -> None:
+    """从 YAML 文件批量覆盖依赖版本"""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    base_data = load_yaml(base)
+    override_data = load_yaml(override)
+    if not override_data:
+        return
+
+    deps = base_data.setdefault("dependencies", {})
+    for name, ver in override_data.items():
+        deps.setdefault(name, {})["version"] = ver
+        logger.info("  %s -> %s", name, ver)
+    save_yaml(base, base_data)
+
+
+def _apply_single_dep(base: str, dep_name: str, dep_version: str) -> None:
+    """更新单个依赖版本"""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    base_data = load_yaml(base)
+    deps = base_data.setdefault("dependencies", {})
+    deps.setdefault(dep_name, {})["version"] = dep_version
+    logger.info("  %s -> %s", dep_name, dep_version)
+    save_yaml(base, base_data)
+
+
 @main.command(name="apply-deps")
 @click.option("--override", default=None, help="版本覆盖 YAML 文件")
 @click.option("--dep-name", default=None, help="要更新的依赖名")
@@ -160,32 +200,12 @@ def apply_deps(
     dep_version: str | None, show: bool, base: str,
 ) -> None:
     """应用依赖版本覆盖（供 Jenkins 流水线调用）"""
-    import logging
-    logger = logging.getLogger(__name__)
-
     if show:
-        deps = load_yaml(base).get("dependencies", {})
-        if not deps:
-            click.echo("未定义任何依赖。")
-            return
-        for name, info in sorted(deps.items()):
-            ver = info.get("version", "未设置") if isinstance(info, dict) else info
-            click.echo(f"  {name}: {ver}")
+        _show_deps(base)
     elif override:
-        base_data = load_yaml(base)
-        override_data = load_yaml(override)
-        if override_data:
-            deps = base_data.setdefault("dependencies", {})
-            for name, ver in override_data.items():
-                deps.setdefault(name, {})["version"] = ver
-                logger.info("  %s -> %s", name, ver)
-            save_yaml(base, base_data)
+        _apply_override_file(base, override)
     elif dep_name and dep_version:
-        base_data = load_yaml(base)
-        deps = base_data.setdefault("dependencies", {})
-        deps.setdefault(dep_name, {})["version"] = dep_version
-        logger.info("  %s -> %s", dep_name, dep_version)
-        save_yaml(base, base_data)
+        _apply_single_dep(base, dep_name, dep_version)
     else:
         click.echo("请指定 --override、--dep-name/--dep-version 或 --show")
 
