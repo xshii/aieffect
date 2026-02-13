@@ -46,6 +46,12 @@ class DataError(AIEffectError):
     code = "DATA_ERROR"
 
 
+class ResourceError(AIEffectError):
+    """资源不存在或不可用（仓库、包、文件等）"""
+
+    code = "RESOURCE_ERROR"
+
+
 class ValidationError(AIEffectError):
     """输入数据校验失败"""
 

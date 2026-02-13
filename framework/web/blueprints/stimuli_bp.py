@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request
 
 from framework.core.exceptions import AIEffectError
 from framework.web.responses import bad_request, not_found
@@ -13,8 +13,7 @@ stimuli_bp = Blueprint("stimuli", __name__, url_prefix="/api/stimuli")
 
 
 def _stimulus_svc():  # type: ignore[no-untyped-def]
-    from framework.services.container import get_container
-    return get_container().stimulus
+    return g.svc.stimulus
 
 
 @stimuli_bp.route("", methods=["GET"])

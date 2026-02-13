@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from framework.core.exceptions import ValidationError
+from framework.core.exceptions import DependencyError, ExecutionError, ValidationError
 from framework.core.models import CaseRepoBinding, RepoSpec, RepoWorkspace
 from framework.core.registry import YamlRegistry
 from framework.utils.shell import run_cmd
@@ -174,7 +174,7 @@ class RepoService(YamlRegistry):
             if spec.build_cmd:
                 run_cmd(spec.build_cmd, cwd=str(cwd), label="build")
             ws.local_path = str(cwd)
-        except RuntimeError as e:
+        except ExecutionError as e:
             ws.status = "error"
             logger.error("构建步骤失败 %s: %s", name, e)
 
@@ -294,9 +294,9 @@ class RepoService(YamlRegistry):
                 try:
                     dm.fetch(dep_name)
                     logger.info("  依赖就绪: %s", dep_name)
-                except (OSError, ValueError, RuntimeError) as e:
+                except (OSError, DependencyError, ExecutionError) as e:
                     logger.warning("  依赖获取失败（非致命）: %s - %s", dep_name, e)
-        except (OSError, ValueError) as e:
+        except (OSError, DependencyError) as e:
             logger.warning("  依赖管理器初始化失败: %s", e)
 
     # ---- 工作目录管理 ----

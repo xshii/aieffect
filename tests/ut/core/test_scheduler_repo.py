@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from framework.core.exceptions import ExecutionError, ResourceError, ValidationError
 from framework.core.runner import Case, CaseRunner
 from framework.core.scheduler import Scheduler, _prepare_repo
 
@@ -24,7 +25,9 @@ class TestPrepareRepo:
         assert _prepare_repo({"url": ""}) is None
 
     def test_invalid_ref_raises(self) -> None:
-        with pytest.raises(ValueError, match="非法字符"):
+        with pytest.raises(
+            (ValueError, ValidationError), match="非法字符",
+        ):
             _prepare_repo({"url": "https://example.com/repo.git", "ref": "; rm -rf /"})
 
     def test_clone_and_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -56,7 +59,9 @@ class TestPrepareRepo:
 
         monkeypatch.setattr("framework.core.scheduler.subprocess.run", fake_run)
 
-        with pytest.raises(FileNotFoundError, match="子目录不存在"):
+        with pytest.raises(
+            (FileNotFoundError, ResourceError), match="子目录不存在",
+        ):
             _prepare_repo({"url": "https://example.com/repo.git", "ref": "main", "path": "nonexist"})
 
     def test_setup_and_build(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,7 +107,7 @@ class TestPrepareRepo:
 
         monkeypatch.setattr("framework.core.scheduler.subprocess.run", fake_run)
 
-        with pytest.raises(RuntimeError, match="安装依赖失败"):
+        with pytest.raises((RuntimeError, ExecutionError), match="安装依赖失败"):
             _prepare_repo({
                 "url": "https://example.com/repo.git",
                 "ref": "main",

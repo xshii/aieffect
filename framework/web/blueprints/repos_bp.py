@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request
 
 from framework.web.responses import bad_request, not_found
 
@@ -12,8 +12,7 @@ repos_bp = Blueprint("repos", __name__, url_prefix="/api/repos")
 
 
 def _repo_svc():  # type: ignore[no-untyped-def]
-    from framework.services.container import get_container
-    return get_container().repo
+    return g.svc.repo
 
 
 @repos_bp.route("", methods=["GET"])

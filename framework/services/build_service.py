@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from framework.services.repo_service import RepoService
 
-from framework.core.exceptions import CaseNotFoundError, ValidationError
+from framework.core.exceptions import CaseNotFoundError, ExecutionError, ValidationError
 from framework.core.models import BuildResult, BuildSpec
 from framework.core.registry import YamlRegistry
 from framework.utils.shell import run_cmd
@@ -187,7 +187,7 @@ class BuildService(YamlRegistry):
                 run_cmd(spec.setup_cmd, cwd=work_dir, env=env, label="setup")
             if spec.build_cmd:
                 run_cmd(spec.build_cmd, cwd=work_dir, env=env, label="build")
-        except RuntimeError as e:
+        except ExecutionError as e:
             duration = time.monotonic() - start
             logger.error("构建失败 %s: %s", spec.name, e)
             return BuildResult(
@@ -237,6 +237,6 @@ class BuildService(YamlRegistry):
             run_cmd(spec.clean_cmd, cwd=work_dir, label="clean")
             self.invalidate_cache(name)
             return True
-        except RuntimeError as e:
+        except ExecutionError as e:
             logger.error("清理失败 %s: %s", name, e)
             return False

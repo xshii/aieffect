@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from framework.core.exceptions import ExecutionError
 from framework.utils.shell import run_cmd
 
 
@@ -14,11 +15,11 @@ class TestRunCmd:
         assert "hello" in r.stdout
 
     def test_failure_raises_runtime_error(self, tmp_path) -> None:
-        with pytest.raises(RuntimeError, match="cmd失败"):
+        with pytest.raises(ExecutionError, match="cmd失败"):
             run_cmd("false", cwd=str(tmp_path))
 
     def test_custom_label_in_error(self, tmp_path) -> None:
-        with pytest.raises(RuntimeError, match="mybuild失败"):
+        with pytest.raises(ExecutionError, match="mybuild失败"):
             run_cmd("false", cwd=str(tmp_path), label="mybuild")
 
     def test_env_passed(self, tmp_path) -> None:

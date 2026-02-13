@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from framework.core.dep_manager import DepManager
+from framework.core.exceptions import DependencyError, ResourceError
 
 
 def _write_manifest(tmp_path: Path, data: dict) -> Path:
@@ -68,7 +69,7 @@ class TestLocalVersionSwitch:
     def test_resolve_unknown_package_raises(self, tmp_path: Path) -> None:
         manifest = _write_manifest(tmp_path, {"eda_tools": {}})
         dm = DepManager(registry_path=str(manifest), cache_dir=str(tmp_path / "cache"))
-        with pytest.raises(ValueError, match="不在清单中"):
+        with pytest.raises(DependencyError, match="不在清单中"):
             dm.resolve("nonexist")
 
     def test_fetch_local_exists_no_download(self, tmp_path: Path) -> None:
@@ -106,7 +107,7 @@ class TestLocalVersionSwitch:
         })
 
         dm = DepManager(registry_path=str(manifest), cache_dir=str(tmp_path / "cache"))
-        with pytest.raises(FileNotFoundError, match="本地包.*不存在"):
+        with pytest.raises(ResourceError, match="本地包.*不存在"):
             dm.fetch("vcs")
 
 

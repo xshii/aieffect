@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request
 
 from framework.core.exceptions import AIEffectError
 from framework.web.responses import bad_request, not_found
@@ -11,8 +11,7 @@ envs_bp = Blueprint("envs", __name__, url_prefix="/api/envs")
 
 
 def _env_svc():  # type: ignore[no-untyped-def]
-    from framework.services.container import get_container
-    return get_container().env
+    return g.svc.env
 
 
 @envs_bp.route("", methods=["GET"])

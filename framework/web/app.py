@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, g, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 
@@ -53,6 +53,12 @@ app.register_blueprint(builds_bp)
 app.register_blueprint(repos_bp)
 
 
+@app.before_request
+def _inject_services() -> None:
+    """每次请求前将服务容器注入 Flask g 对象（依赖注入）"""
+    g.svc = get_container()
+
+
 # =========================================================================
 # 全局 JSON 错误处理
 # =========================================================================
@@ -72,13 +78,33 @@ _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
 def _validate_safe_name(value: str, field: str) -> str:
     value = str(value).strip()
     if not _SAFE_NAME_RE.match(value):
-        raise ValueError(f"参数 '{field}' 包含非法字符: {value}")
+        from framework.core.exceptions import ValidationError
+        raise ValidationError(f"参数 '{field}' 包含非法字符: {value}")
     return value
 
 
 @app.errorhandler(HTTPException)
 def handle_http_exception(exc):
     return jsonify(error=exc.description), exc.code
+
+
+# 域异常 → 4xx
+from framework.core.exceptions import AIEffectError, CaseNotFoundError, ValidationError  # noqa: E402
+
+
+@app.errorhandler(CaseNotFoundError)
+def handle_not_found_error(exc):
+    return jsonify(error=str(exc)), 404
+
+
+@app.errorhandler(ValidationError)
+def handle_validation_error(exc):
+    return jsonify(error=str(exc)), 400
+
+
+@app.errorhandler(AIEffectError)
+def handle_domain_error(exc):
+    return jsonify(error=str(exc)), 400
 
 
 @app.errorhandler(Exception)

@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
+from framework.core.exceptions import ExecutionError, ResourceError, ValidationError
 from framework.core.models import Case, TaskResult
 from framework.core.resource import ResourceManager
 from framework.utils.shell import run_cmd
@@ -35,7 +36,7 @@ def _default_prepare_repo(repo: dict[str, str]) -> Path | None:
 
     ref = repo.get("ref", "main")
     if not _SAFE_REF_RE.match(ref):
-        raise ValueError(f"ref 包含非法字符: {ref}")
+        raise ValidationError(f"ref 包含非法字符: {ref}")
 
     from framework.core.config import get_config
     repo_name = url.rstrip("/").split("/")[-1].removesuffix(".git")
@@ -46,7 +47,7 @@ def _default_prepare_repo(repo: dict[str, str]) -> Path | None:
 
     cwd = workspace / repo.get("path", "") if repo.get("path") else workspace
     if not cwd.exists():
-        raise FileNotFoundError(f"仓库子目录不存在: {cwd}")
+        raise ResourceError(f"仓库子目录不存在: {cwd}")
 
     if repo.get("setup"):
         run_cmd(repo["setup"], cwd=str(cwd), label="安装依赖")
@@ -154,7 +155,7 @@ class Scheduler:
 
             cwd = self._resolve_cwd(case)
             return self._run_command(case, cwd)
-        except (ValueError, FileNotFoundError, RuntimeError) as e:
+        except (ValidationError, ResourceError, ExecutionError) as e:
             return self._err(case.name, start, f"仓库准备失败: {e}")
         except subprocess.TimeoutExpired:
             return self._err(case.name, start, f"超时（{case.timeout}秒）")

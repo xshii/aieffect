@@ -20,7 +20,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from framework.services.repo_service import RepoService
 
-from framework.core.exceptions import CaseNotFoundError, ValidationError
+from framework.core.exceptions import (
+    CaseNotFoundError,
+    ExecutionError,
+    ResourceError,
+    ValidationError,
+)
 from framework.core.models import (
     RepoSpec,
     ResultStimulusArtifact,
@@ -199,7 +204,7 @@ class StimulusService(YamlRegistry):
                 artifact = self._acquire_from_storage(spec, dest)
             elif spec.source_type == "external":
                 artifact = self._acquire_from_url(spec, dest)
-        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+        except (OSError, ExecutionError, ResourceError, subprocess.SubprocessError) as e:
             artifact.status = "error"
             logger.error("激励获取失败 %s: %s", name, e)
             return artifact
@@ -236,7 +241,7 @@ class StimulusService(YamlRegistry):
                 artifact = self._construct_with_cmd(spec, merged_params, dest)
             else:
                 raise ValidationError("构造激励需要 template 或 generator_cmd")
-        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+        except (OSError, ExecutionError, ResourceError, subprocess.SubprocessError) as e:
             logger.error("激励构造失败 %s: %s", name, e)
             return StimulusArtifact(spec=spec, status="error")
 
@@ -276,7 +281,7 @@ class StimulusService(YamlRegistry):
             env=env, check=False,
         )
         if r.returncode != 0:
-            raise RuntimeError(f"构造失败 (rc={r.returncode}): {r.stderr[:500]}")
+            raise ExecutionError(f"构造失败 (rc={r.returncode}): {r.stderr[:500]}")
         checksum = self._dir_checksum(dest)
         return StimulusArtifact(
             spec=spec, local_path=str(dest), checksum=checksum, status="ready",
@@ -308,7 +313,7 @@ class StimulusService(YamlRegistry):
             capture_output=True, text=True, cwd=str(dest), check=False,
         )
         if r.returncode != 0:
-            raise RuntimeError(f"生成失败 (rc={r.returncode}): {r.stderr[:500]}")
+            raise ExecutionError(f"生成失败 (rc={r.returncode}): {r.stderr[:500]}")
         checksum = self._dir_checksum(dest)
         return StimulusArtifact(
             spec=spec, local_path=str(dest), checksum=checksum, status="ready",
@@ -322,7 +327,7 @@ class StimulusService(YamlRegistry):
         storage = create_storage()
         data = storage.get("stimuli", spec.storage_key)
         if data is None:
-            raise RuntimeError(f"Storage 中不存在: stimuli/{spec.storage_key}")
+            raise ResourceError(f"Storage 中不存在: stimuli/{spec.storage_key}")
         out = dest / f"{spec.storage_key}.json"
         out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return StimulusArtifact(
@@ -409,7 +414,7 @@ class StimulusService(YamlRegistry):
             if spec.source_type == ResultStimulusType.API:
                 return self._collect_via_api(spec, dest)
             return self._collect_via_binary(spec, dest)
-        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+        except (OSError, ExecutionError, ResourceError, subprocess.SubprocessError) as e:
             logger.error("结果激励获取失败 %s: %s", name, e)
             return ResultStimulusArtifact(
                 spec=spec, status="error", message=str(e),
@@ -449,7 +454,7 @@ class StimulusService(YamlRegistry):
             raise ValidationError("binary 类型结果激励必须指定 binary_path")
         src = Path(spec.binary_path)
         if not src.exists():
-            raise RuntimeError(f"二进制文件不存在: {spec.binary_path}")
+            raise ResourceError(f"二进制文件不存在: {spec.binary_path}")
 
         out = dest / src.name
         out.write_bytes(src.read_bytes())
@@ -461,7 +466,7 @@ class StimulusService(YamlRegistry):
                 capture_output=True, text=True, cwd=str(dest), check=False,
             )
             if r.returncode != 0:
-                raise RuntimeError(f"解析失败 (rc={r.returncode}): {r.stderr[:500]}")
+                raise ExecutionError(f"解析失败 (rc={r.returncode}): {r.stderr[:500]}")
             try:
                 data = json.loads(r.stdout)
             except json.JSONDecodeError:
@@ -551,7 +556,7 @@ class StimulusService(YamlRegistry):
             if spec.trigger_type == TriggerType.API:
                 return self._trigger_via_api(spec, stimulus_path, payload)
             return self._trigger_via_binary(spec, stimulus_path)
-        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+        except (OSError, ExecutionError, ResourceError, subprocess.SubprocessError) as e:
             logger.error("激励触发失败 %s: %s", name, e)
             return TriggerResult(
                 spec=spec, status="failed", message=str(e),
@@ -608,7 +613,7 @@ class StimulusService(YamlRegistry):
             shlex.split(cmd), capture_output=True, text=True, check=False,
         )
         if r.returncode != 0:
-            raise RuntimeError(f"触发失败 (rc={r.returncode}): {r.stderr[:500]}")
+            raise ExecutionError(f"触发失败 (rc={r.returncode}): {r.stderr[:500]}")
 
         response: dict[str, Any] = {"stdout": r.stdout[:2000]}
         try:

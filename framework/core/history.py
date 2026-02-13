@@ -150,10 +150,11 @@ class HistoryManager:
 
     def submit_external(self, run_data: dict) -> dict:
         """接收外部（本地执行）提交的执行结果"""
+        from framework.core.exceptions import ValidationError
         required = ["suite", "results"]
         for field in required:
             if field not in run_data:
-                raise ValueError(f"缺少必填字段: {field}")
+                raise ValidationError(f"缺少必填字段: {field}")
 
         return self.record_run(
             suite=run_data["suite"],
