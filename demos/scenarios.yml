@@ -1,0 +1,64 @@
+# =========================================================================
+# 验证场景配置 — 每个场景对应 orchestrate 的一组参数
+#
+# 运行方式:
+#   pytest demos/ -v                   # 全部场景
+#   pytest demos/ -k "smoke" -v        # 只跑 smoke
+#   pytest demos/ -k "regression" -v   # 只跑 regression
+# =========================================================================
+
+# ---- 用例 A: 本地 PC + EDA 仿真 + 结果上传服务器 ----
+scenario_a_smoke:
+  description: "本地 PC smoke 测试，VCS 仿真，结果 rsync 到服务器"
+  snapshot_id: "20250206B003"
+  plan:
+    suite: smoke
+    parallel: 4
+    build_env_name: local_pc
+    exe_env_name: sim_eda
+    repo_names: [rtl_core]
+    repo_ref_overrides:
+      rtl_core: br_fix_timing_closure
+    build_names: [rtl_build]
+    case_names: [sanity_check, basic_func]
+  upload:
+    type: rsync
+    target: "ci@10.0.1.100:/data/results"
+
+# ---- 用例 A 变体: 完整回归 ----
+scenario_a_regression:
+  description: "本地 PC 全量回归，Xcelium 仿真，带覆盖率"
+  snapshot_id: "20250206B003"
+  plan:
+    suite: regression
+    parallel: 8
+    build_env_name: local_pc
+    exe_env_name: sim_eda
+    repo_names: [rtl_core]
+    repo_ref_overrides:
+      rtl_core: br_perf_optimization
+    build_names: [rtl_build]
+    case_names: []  # 空 = 全部用例
+  upload:
+    type: rsync
+    target: "ci@10.0.1.100:/data/results"
+
+# ---- 用例 B: 远程服务器 B 执行 + 结果打包下载 ----
+scenario_b_remote:
+  description: "远程服务器 B 执行，结果打包并提供下载链接"
+  snapshot_id: "20250206B003"
+  plan:
+    suite: smoke
+    parallel: 4
+    build_env_name: remote_server_b
+    exe_env_name: sim_eda_remote
+    repo_names: [rtl_core]
+    repo_ref_overrides:
+      rtl_core: br_fix_timing_closure
+    build_names: [rtl_build]
+    case_names: [sanity_check, basic_func]
+  upload:
+    type: rsync
+    target: "ci@10.0.2.200:/data/results/smoke"
+  export:
+    format: html
