@@ -101,11 +101,6 @@ class UploadResult:
         """是否上传成功"""
         return self.status == "success"
 
-    @property
-    def is_error(self) -> bool:
-        """是否上传失败"""
-        return self.status == "error"
-
     def to_dict(self) -> dict[str, Any]:
         """转换为字典（用于序列化）"""
         result: dict[str, Any] = {
