@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request
 
 from framework.core.exceptions import AIEffectError
+from framework.web.responses import bad_request, not_found
 
 builds_bp = Blueprint("builds", __name__, url_prefix="/api/builds")
 
 
 def _build_svc():  # type: ignore[no-untyped-def]
-    from framework.services.container import get_container
-    return get_container().build
+    return g.svc.build
 
 
 @builds_bp.route("", methods=["GET"])
@@ -25,33 +25,25 @@ def list_all() -> Response:
 def get(name: str) -> tuple[Response, int] | Response:
     spec = _build_svc().get(name)
     if spec is None:
-        return jsonify(error="构建配置不存在"), 404
+        return not_found("构建配置")
     return jsonify(build=asdict(spec))
 
 
 @builds_bp.route("", methods=["POST"])
 def add() -> Response:
-    from framework.core.models import BuildSpec
     body = request.get_json(silent=True) or {}
-    name = body.get("name", "")
-    if not name:
-        return jsonify(error="需要提供 name"), 400
-    spec = BuildSpec(
-        name=name, repo_name=body.get("repo_name", ""),
-        setup_cmd=body.get("setup_cmd", ""),
-        build_cmd=body.get("build_cmd", ""),
-        clean_cmd=body.get("clean_cmd", ""),
-        output_dir=body.get("output_dir", ""),
-    )
-    entry = _build_svc().register(spec)
-    return jsonify(message=f"构建已注册: {name}", build=entry)
+    if not body.get("name"):
+        return bad_request("需要提供 name")
+    svc = _build_svc()
+    entry = svc.register(svc.create_spec(body))
+    return jsonify(message=f"构建已注册: {body['name']}", build=entry)
 
 
 @builds_bp.route("/<name>", methods=["DELETE"])
 def delete(name: str) -> tuple[Response, int] | Response:
     if _build_svc().remove(name):
         return jsonify(message=f"构建已删除: {name}")
-    return jsonify(error="构建配置不存在"), 404
+    return not_found("构建配置")
 
 
 @builds_bp.route("/<name>/run", methods=["POST"])
@@ -71,4 +63,4 @@ def run(name: str) -> tuple[Response, int] | Response:
             repo_ref=result.repo_ref,
         )
     except AIEffectError as e:
-        return jsonify(error=str(e)), 400
+        return bad_request(str(e))

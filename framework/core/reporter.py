@@ -162,7 +162,8 @@ def generate_report(result_dir: str = "results", fmt: str = "html") -> str:
 
     formatter_cls = _formatters.get(fmt)
     if formatter_cls is None:
-        raise ValueError(
+        from framework.core.exceptions import ValidationError
+        raise ValidationError(
             f"不支持的格式: {fmt}（可用: {list(_formatters)}）",
         )
 

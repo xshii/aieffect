@@ -18,9 +18,9 @@
   - list_local_versions() 查看本地已安装的所有版本
 
 用法:
-    from framework.core.dep_manager import DepManager
+    from framework.services.container import get_container
 
-    dm = DepManager()
+    dm = get_container().deps
     dm.fetch_all()
     dm.fetch("model_lib", version="v2.1.0")
 
@@ -42,11 +42,10 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from framework.core.exceptions import DataError, DependencyError, ResourceError
 from framework.utils.yaml_io import load_yaml
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_PACKAGES_DIR = "deps/packages"
 
 
 @dataclass
@@ -75,17 +74,14 @@ class DepManager:
 
     def __init__(
         self,
-        registry_path: str = "",
-        cache_dir: str = "",
+        registry_path: str,
+        cache_dir: str,
+        packages_dir: str = "deps/packages",
     ) -> None:
-        if not registry_path or not cache_dir:
-            from framework.core.config import get_config
-            cfg = get_config()
-            registry_path = registry_path or cfg.manifest
-            cache_dir = cache_dir or cfg.cache_dir
         self.registry_path = Path(registry_path)
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.packages_dir = Path(packages_dir)
         self.packages: dict[str, PackageInfo] = {}
         self._load_registry()
 
@@ -142,7 +138,7 @@ class DepManager:
         """
         pkg = self.packages.get(name)
         if pkg is None:
-            raise ValueError(
+            raise DependencyError(
                 f"依赖包 '{name}' 不在清单中。"
                 f"可用: {list(self.packages.keys())}"
             )
@@ -167,7 +163,7 @@ class DepManager:
         if pkg.source == "lfs":
             if pkg.lfs_path:
                 return Path(pkg.lfs_path)
-            return Path(DEFAULT_PACKAGES_DIR) / pkg.name / version
+            return self.packages_dir / pkg.name / version
         # api/url 类型的缓存目录
         return self.cache_dir / pkg.name / version
 
@@ -178,7 +174,7 @@ class DepManager:
         """
         pkg = self.packages.get(name)
         if pkg is None:
-            raise ValueError(
+            raise DependencyError(
                 f"依赖包 '{name}' 不在清单中。"
                 f"可用: {list(self.packages.keys())}"
             )
@@ -186,7 +182,7 @@ class DepManager:
         if pkg.base_path:
             base = Path(pkg.base_path)
         elif pkg.source == "lfs":
-            base = Path(DEFAULT_PACKAGES_DIR) / pkg.name
+            base = self.packages_dir / pkg.name
         else:
             base = self.cache_dir / pkg.name
 
@@ -211,7 +207,7 @@ class DepManager:
         """
         pkg = self.packages.get(name)
         if pkg is None:
-            raise ValueError(
+            raise DependencyError(
                 f"依赖包 '{name}' 不在清单中。"
                 f"可用: {list(self.packages.keys())}"
             )
@@ -228,7 +224,7 @@ class DepManager:
 
         # ---- 2. 纯本地包不做远程下载 ----
         if pkg.source == "local":
-            raise FileNotFoundError(
+            raise ResourceError(
                 f"本地包 '{name}' 版本 {ver} 不存在: {local_path}。"
                 f"已安装版本: {self.list_local_versions(name)}"
             )
@@ -253,7 +249,7 @@ class DepManager:
         for name in self.packages:
             try:
                 results[name] = self.fetch(name)
-            except (OSError, ValueError, ConnectionError) as exc:
+            except (OSError, DependencyError, ResourceError, DataError, ConnectionError) as exc:
                 logger.exception("拉取失败: %s", name)
                 failed[name] = str(exc)
                 results[name] = f"[FAILED] {exc}"
@@ -274,20 +270,20 @@ class DepManager:
         """统一下载逻辑（api / url 共用）"""
         if pkg.source == "api":
             if not pkg.api_url:
-                raise ValueError(f"依赖包 '{pkg.name}' 未定义 api_url")
+                raise DependencyError(f"依赖包 '{pkg.name}' 未定义 api_url")
             download_url = (
                 f"{pkg.api_url.rstrip('/')}/{version}/{pkg.name}.tar.gz"
             )
             filename = f"{pkg.name}.tar.gz"
         elif pkg.source == "url":
             if not pkg.url:
-                raise ValueError(f"依赖包 '{pkg.name}' 未定义 url")
+                raise DependencyError(f"依赖包 '{pkg.name}' 未定义 url")
             download_url = pkg.url.replace("{version}", version)
             filename = download_url.rstrip("/").split("/")[-1]
             if not filename:
-                raise ValueError(f"无法从 URL 解析文件名: {download_url}")
+                raise DependencyError(f"无法从 URL 解析文件名: {download_url}")
         else:
-            raise ValueError(f"不支持的来源类型: {pkg.source}")
+            raise DependencyError(f"不支持的来源类型: {pkg.source}")
 
         # 下载到 base_path/version/ 或 cache_dir/name/version/
         if pkg.base_path:
@@ -317,7 +313,7 @@ class DepManager:
         if pkg.lfs_path:
             lfs_path = Path(pkg.lfs_path)
         else:
-            lfs_path = Path(DEFAULT_PACKAGES_DIR) / pkg.name / version
+            lfs_path = self.packages_dir / pkg.name / version
         if not lfs_path.exists():
             logger.info("  执行 git lfs pull: %s", lfs_path)
             subprocess.run(
@@ -326,7 +322,7 @@ class DepManager:
             )
 
         if not lfs_path.exists():
-            raise FileNotFoundError(f"LFS 包未找到: {lfs_path}")
+            raise ResourceError(f"LFS 包未找到: {lfs_path}")
 
         logger.info("  LFS 已解析: %s", lfs_path)
         return lfs_path
@@ -338,7 +334,7 @@ class DepManager:
                 sha256.update(chunk)
         actual = sha256.hexdigest()
         if actual != expected:
-            raise ValueError(
+            raise DataError(
                 f"校验和不匹配 {path}: 期望 {expected}, 实际 {actual}",
             )
         logger.info("  校验和通过: %s", path.name)
@@ -385,9 +381,9 @@ class DepManager:
         """上传包到 Git LFS 存储"""
         src = Path(src_path)
         if not src.exists():
-            raise FileNotFoundError(f"源文件不存在: {src_path}")
+            raise ResourceError(f"源文件不存在: {src_path}")
 
-        dest_dir = Path(DEFAULT_PACKAGES_DIR) / name / version
+        dest_dir = self.packages_dir / name / version
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         if src.is_dir():

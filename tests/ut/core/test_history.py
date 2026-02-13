@@ -62,11 +62,12 @@ class TestHistoryManager:
         assert entry["environment"] == "lab"
 
     def test_submit_external_missing_fields(self, tmp_path: Path) -> None:
+        from framework.core.exceptions import ValidationError
         hm = HistoryManager(history_file=str(tmp_path / "history.json"))
         try:
             hm.submit_external({"results": []})
-            assert False, "应抛出 ValueError"
-        except ValueError:
+            assert False, "应抛出 ValidationError"
+        except ValidationError:
             pass
 
     def test_limit(self, tmp_path: Path) -> None:

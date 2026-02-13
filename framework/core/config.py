@@ -31,6 +31,13 @@ class Config:
     workspace_dir: str = "data/workspaces"
     storage_dir: str = "data/storage"
     log_rules_file: str = "configs/log_rules.yml"
+    packages_dir: str = "deps/packages"
+
+    # 注册表文件（各 Service 的 YAML 数据源）
+    builds_file: str = "data/builds.yml"
+    envs_file: str = "data/environments.yml"
+    repos_file: str = "data/repos.yml"
+    stimuli_file: str = "data/stimuli.yml"
 
     # 执行
     max_workers: int = 8

@@ -53,10 +53,7 @@ class LogCheckReport:
 class LogChecker:
     """日志匹配检查器"""
 
-    def __init__(self, rules_file: str = "") -> None:
-        if not rules_file:
-            from framework.core.config import get_config
-            rules_file = get_config().log_rules_file
+    def __init__(self, rules_file: str) -> None:
         self.rules: list[dict] = []
         self._load_rules(rules_file)
 

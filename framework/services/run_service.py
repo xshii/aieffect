@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from framework.core.models import SuiteResult
 from framework.core.pipeline import ResultPipeline
 from framework.core.runner import CaseRunner
+
+if TYPE_CHECKING:
+    from framework.core.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +42,17 @@ class RunService:
 
     def __init__(
         self,
-        pipeline: ResultPipeline | None = None,
+        pipeline: ResultPipeline,
+        config: Config | None = None,
     ) -> None:
-        self.pipeline = pipeline or ResultPipeline()
+        self.pipeline = pipeline
+        self._config = config
 
     def execute(self, req: RunRequest) -> SuiteResult:
         """执行套件并返回结果（不自动持久化）"""
         runner = CaseRunner(
             config_path=req.config_path, parallel=req.parallel,
+            config=self._config,
         )
         return runner.run_suite(
             req.suite,

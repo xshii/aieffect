@@ -1,4 +1,8 @@
-"""测试调度器 - 管理用例的并行执行"""
+"""测试调度器 - 管理用例的并行执行
+
+通过策略模式注入仓库准备逻辑（RepoPreparer），消除与 git/dep 的直接耦合。
+默认使用 RepoService 实现仓库操作，也可在测试中替换为 mock。
+"""
 
 from __future__ import annotations
 
@@ -7,26 +11,53 @@ import re
 import shlex
 import subprocess
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from framework.core.exceptions import ExecutionError, ResourceError, ValidationError
 from framework.core.models import Case, TaskResult
 from framework.core.resource import ResourceManager
+from framework.utils.shell import run_cmd
 
 logger = logging.getLogger(__name__)
+
+# 仓库准备策略类型：接受 repo dict，返回工作目录路径或 None
+RepoPreparer = Callable[[dict[str, str]], "Path | None"]
 
 _SAFE_REF_RE = re.compile(r"^[a-zA-Z0-9_./@\-]+$")
 
 
-def _run_step(label: str, cmd_str: str, cwd: Path) -> None:
-    """执行一步 shell 命令，失败时抛出 RuntimeError"""
-    logger.info("  %s: %s", label, cmd_str)
-    r = subprocess.run(
-        shlex.split(cmd_str), capture_output=True, text=True,
-        cwd=str(cwd), check=False,
-    )
-    if r.returncode != 0:
-        raise RuntimeError(f"{label}失败 (rc={r.returncode}): {r.stderr[:500]}")
+def make_repo_preparer(workspace_dir: str) -> RepoPreparer:
+    """创建仓库准备策略（捕获 workspace_dir，无需运行时查 Config）"""
+
+    def _prepare(repo: dict[str, str]) -> Path | None:
+        url = repo.get("url", "")
+        if not url:
+            return None
+
+        ref = repo.get("ref", "main")
+        if not _SAFE_REF_RE.match(ref):
+            raise ValidationError(f"ref 包含非法字符: {ref}")
+
+        repo_name = url.rstrip("/").split("/")[-1].removesuffix(".git")
+        workspace = Path(workspace_dir) / repo_name / ref.replace("/", "_")
+        workspace.mkdir(parents=True, exist_ok=True)
+
+        _clone_or_fetch(url, ref, workspace)
+
+        cwd = workspace / repo.get("path", "") if repo.get("path") else workspace
+        if not cwd.exists():
+            raise ResourceError(f"仓库子目录不存在: {cwd}")
+
+        if repo.get("setup"):
+            run_cmd(repo["setup"], cwd=str(cwd), label="安装依赖")
+        if repo.get("build"):
+            run_cmd(repo["build"], cwd=str(cwd), label="编译")
+
+        return cwd
+
+    return _prepare
 
 
 def _clone_or_fetch(url: str, ref: str, workspace: Path) -> None:
@@ -58,65 +89,30 @@ def _clone_or_fetch(url: str, ref: str, workspace: Path) -> None:
             )
 
 
-def _resolve_repo_deps(cwd: Path) -> None:
-    """解析仓库内的依赖清单（非致命，失败仅警告）"""
-    repo_manifest = cwd / "deps" / "manifest.yml"
-    if not repo_manifest.exists():
-        return
-    try:
-        from framework.core.dep_manager import DepManager
-        dm = DepManager(registry_path=str(repo_manifest))
-        dm.fetch_all()
-        logger.info("  仓库依赖解析完成（%d 个包）", len(dm.packages))
-    except (OSError, ValueError, RuntimeError) as e:
-        logger.warning("  仓库依赖解析失败（非致命）: %s", e)
-
-
-def _prepare_repo(repo: dict[str, str]) -> Path | None:
-    """准备外部仓库工作目录（clone/fetch -> 依赖 -> setup -> build）"""
-    url = repo.get("url", "")
-    if not url:
-        return None
-
-    ref = repo.get("ref", "main")
-    if not _SAFE_REF_RE.match(ref):
-        raise ValueError(f"ref 包含非法字符: {ref}")
-
-    from framework.core.config import get_config
-    repo_name = url.rstrip("/").split("/")[-1].removesuffix(".git")
-    workspace = Path(get_config().workspace_dir) / repo_name / ref.replace("/", "_")
-    workspace.mkdir(parents=True, exist_ok=True)
-
-    _clone_or_fetch(url, ref, workspace)
-
-    cwd = workspace / repo.get("path", "") if repo.get("path") else workspace
-    if not cwd.exists():
-        raise FileNotFoundError(f"仓库子目录不存在: {cwd}")
-
-    _resolve_repo_deps(cwd)
-
-    if repo.get("setup"):
-        _run_step("安装依赖", repo["setup"], cwd)
-    if repo.get("build"):
-        _run_step("编译", repo["build"], cwd)
-
-    return cwd
-
-
 class Scheduler:
     """可配置并行度的测试调度器
 
     支持可选的 ResourceManager 集成：执行前 acquire，执行后 release，
     资源不足时等待或跳过。
+
+    通过 repo_preparer 参数注入仓库准备策略（Strategy 模式），
+    使用 make_repo_preparer() 工厂创建默认实现。
     """
 
     def __init__(
         self,
         max_workers: int = 1,
         resource_manager: ResourceManager | None = None,
+        repo_preparer: RepoPreparer | None = None,
     ) -> None:
         self.max_workers = max(1, max_workers)
         self.resource_mgr = resource_manager
+        self._repo_preparer = repo_preparer or self._noop_preparer
+
+    @staticmethod
+    def _noop_preparer(repo: dict[str, str]) -> Path | None:
+        """空准备器 — 未注入 repo_preparer 时返回 None"""
+        return None
 
     @staticmethod
     def _err(name: str, start: float, msg: str) -> TaskResult:
@@ -126,7 +122,7 @@ class Scheduler:
         """准备外部仓库工作目录，无仓库配置时返回 None"""
         if not case.repo or not case.repo.get("url"):
             return None
-        repo_dir = _prepare_repo(case.repo)
+        repo_dir = self._repo_preparer(case.repo)
         return str(repo_dir) if repo_dir else None
 
     def _run_command(self, case: Case, cwd: str | None) -> TaskResult:
@@ -162,7 +158,7 @@ class Scheduler:
 
             cwd = self._resolve_cwd(case)
             return self._run_command(case, cwd)
-        except (ValueError, FileNotFoundError, RuntimeError) as e:
+        except (ValidationError, ResourceError, ExecutionError) as e:
             return self._err(case.name, start, f"仓库准备失败: {e}")
         except subprocess.TimeoutExpired:
             return self._err(case.name, start, f"超时（{case.timeout}秒）")

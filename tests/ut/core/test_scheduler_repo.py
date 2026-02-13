@@ -7,29 +7,27 @@ from pathlib import Path
 
 import pytest
 
+from framework.core.exceptions import ExecutionError, ResourceError, ValidationError
 from framework.core.runner import Case, CaseRunner
-from framework.core.scheduler import Scheduler, _prepare_repo
-
-
-def _patch_workspace(monkeypatch: pytest.MonkeyPatch, ws_dir: str) -> None:
-    """将 Config.workspace_dir 指向测试临时目录"""
-    import framework.core.config as cfgmod
-    cfg = cfgmod.get_config()
-    monkeypatch.setattr(cfg, "workspace_dir", ws_dir)
+from framework.core.scheduler import Scheduler, make_repo_preparer
 
 
 class TestPrepareRepo:
-    def test_empty_url_returns_none(self) -> None:
-        assert _prepare_repo({}) is None
-        assert _prepare_repo({"url": ""}) is None
+    def test_empty_url_returns_none(self, tmp_path: Path) -> None:
+        prepare = make_repo_preparer(str(tmp_path))
+        assert prepare({}) is None
+        assert prepare({"url": ""}) is None
 
-    def test_invalid_ref_raises(self) -> None:
-        with pytest.raises(ValueError, match="非法字符"):
-            _prepare_repo({"url": "https://example.com/repo.git", "ref": "; rm -rf /"})
+    def test_invalid_ref_raises(self, tmp_path: Path) -> None:
+        prepare = make_repo_preparer(str(tmp_path))
+        with pytest.raises(
+            (ValueError, ValidationError), match="非法字符",
+        ):
+            prepare({"url": "https://example.com/repo.git", "ref": "; rm -rf /"})
 
     def test_clone_and_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """模拟 clone 成功后返回正确的 cwd"""
-        _patch_workspace(monkeypatch, str(tmp_path / "ws"))
+        prepare = make_repo_preparer(str(tmp_path / "ws"))
 
         def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
             if cmd[0] == "git" and cmd[1] == "clone":
@@ -40,12 +38,12 @@ class TestPrepareRepo:
 
         monkeypatch.setattr("framework.core.scheduler.subprocess.run", fake_run)
 
-        cwd = _prepare_repo({"url": "https://example.com/myrepo.git", "ref": "v1.0"})
+        cwd = prepare({"url": "https://example.com/myrepo.git", "ref": "v1.0"})
         assert cwd is not None
         assert "myrepo" in str(cwd)
 
     def test_subpath_not_found(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch_workspace(monkeypatch, str(tmp_path / "ws"))
+        prepare = make_repo_preparer(str(tmp_path / "ws"))
 
         def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
             if cmd[0] == "git" and cmd[1] == "clone":
@@ -56,12 +54,14 @@ class TestPrepareRepo:
 
         monkeypatch.setattr("framework.core.scheduler.subprocess.run", fake_run)
 
-        with pytest.raises(FileNotFoundError, match="子目录不存在"):
-            _prepare_repo({"url": "https://example.com/repo.git", "ref": "main", "path": "nonexist"})
+        with pytest.raises(
+            (FileNotFoundError, ResourceError), match="子目录不存在",
+        ):
+            prepare({"url": "https://example.com/repo.git", "ref": "main", "path": "nonexist"})
 
     def test_setup_and_build(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """验证 setup 和 build 命令被调用"""
-        _patch_workspace(monkeypatch, str(tmp_path / "ws"))
+        prepare = make_repo_preparer(str(tmp_path / "ws"))
 
         call_log: list[list[str]] = []
 
@@ -76,7 +76,7 @@ class TestPrepareRepo:
 
         monkeypatch.setattr("framework.core.scheduler.subprocess.run", fake_run)
 
-        _prepare_repo({
+        prepare({
             "url": "https://example.com/repo.git",
             "ref": "main",
             "setup": "pip install -r requirements.txt",
@@ -88,7 +88,7 @@ class TestPrepareRepo:
         assert "make build" in flat
 
     def test_setup_failure_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        _patch_workspace(monkeypatch, str(tmp_path / "ws"))
+        prepare = make_repo_preparer(str(tmp_path / "ws"))
 
         def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
             if isinstance(cmd, list) and cmd[0] == "git" and cmd[1] == "clone":
@@ -102,8 +102,8 @@ class TestPrepareRepo:
 
         monkeypatch.setattr("framework.core.scheduler.subprocess.run", fake_run)
 
-        with pytest.raises(RuntimeError, match="安装依赖失败"):
-            _prepare_repo({
+        with pytest.raises((RuntimeError, ExecutionError), match="安装依赖失败"):
+            prepare({
                 "url": "https://example.com/repo.git",
                 "ref": "main",
                 "setup": "pip install nonexist",
@@ -112,7 +112,7 @@ class TestPrepareRepo:
 
     def test_clone_fallback_to_full(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """浅克隆失败时回退到完整克隆"""
-        _patch_workspace(monkeypatch, str(tmp_path / "ws"))
+        prepare = make_repo_preparer(str(tmp_path / "ws"))
 
         call_log: list[list[str]] = []
 
@@ -131,7 +131,7 @@ class TestPrepareRepo:
 
         monkeypatch.setattr("framework.core.scheduler.subprocess.run", fake_run)
 
-        cwd = _prepare_repo({"url": "https://example.com/repo.git", "ref": "main"})
+        cwd = prepare({"url": "https://example.com/repo.git", "ref": "main"})
         assert cwd is not None
         # 验证调用了两次 git clone
         clone_cmds = [c for c in call_log if c[0] == "git" and c[1] == "clone"]
@@ -141,7 +141,7 @@ class TestPrepareRepo:
 
     def test_fetch_existing_repo(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """已存在 .git 目录时执行 fetch+checkout 而非 clone"""
-        _patch_workspace(monkeypatch, str(tmp_path / "ws"))
+        prepare = make_repo_preparer(str(tmp_path / "ws"))
 
         call_log: list[list[str]] = []
 
@@ -156,7 +156,7 @@ class TestPrepareRepo:
         repo_dir.mkdir(parents=True, exist_ok=True)
         (repo_dir / ".git").mkdir()
 
-        cwd = _prepare_repo({"url": "https://example.com/repo.git", "ref": "main"})
+        cwd = prepare({"url": "https://example.com/repo.git", "ref": "main"})
         assert cwd is not None
         # 应执行 fetch + checkout 而非 clone
         git_cmds = [c for c in call_log if c[0] == "git"]
@@ -166,14 +166,15 @@ class TestPrepareRepo:
 
 
 class TestSchedulerWithRepo:
-    def test_execute_with_repo_error(self) -> None:
+    def test_execute_with_repo_error(self, tmp_path: Path) -> None:
         """repo 准备失败时返回 error 结果"""
         case = Case(
             name="bad_repo",
             args={"cmd": "echo hi"},
             repo={"url": "https://example.com/repo.git", "ref": "; bad"},
         )
-        scheduler = Scheduler(max_workers=1)
+        prepare = make_repo_preparer(str(tmp_path))
+        scheduler = Scheduler(max_workers=1, repo_preparer=prepare)
         results = scheduler.run_all([case])
         assert results[0].status == "error"
         assert "非法字符" in results[0].message

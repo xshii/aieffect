@@ -1,14 +1,14 @@
-"""执行编排器 — 7 步流水线
+"""执行编排器 — 7 步流水线（Step 模式）
 
-将测试执行拆解为清晰的 7 个阶段:
+将测试执行拆解为清晰的 7 个阶段，每个阶段为独立的 Step 类:
 
-  1. provision_env     — 装配执行环境（最优先）
-  2. checkout_repos    — 检出代码仓（在环境中）
-  3. build             — 编译构建
-  4. acquire_stimuli   — 获取激励
-  5. execute           — 执行用例
-  6. collect_results   — 收集结果
-  7. teardown          — 清理回收
+  1. ProvisionEnvStep   — 装配执行环境（最优先）
+  2. CheckoutStep       — 检出代码仓（在环境中）
+  3. BuildStep          — 编译构建
+  4. AcquireStimuliStep — 获取激励
+  5. ExecuteStep        — 执行用例
+  6. CollectResultsStep — 收集结果
+  7. TeardownStep       — 清理回收
 
 环境优先于代码仓：环境决定代码仓检出位置。
 使用 ServiceContainer 统一依赖注入，避免跨服务裸构造。
@@ -17,6 +17,7 @@ teardown 通过 try/finally 保证执行。
 
 from __future__ import annotations
 
+import abc
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -83,40 +84,48 @@ class OrchestrationReport:
         return self.suite_result is not None and self.suite_result.success
 
 
-class ExecutionOrchestrator:
-    """7 步执行编排器（环境优先，try/finally 保证 teardown）"""
+# =========================================================================
+# Step 抽象基类
+# =========================================================================
 
-    def __init__(self, container: ServiceContainer | None = None) -> None:
-        self.c = container or ServiceContainer()
 
-    def run(self, plan: OrchestrationPlan) -> OrchestrationReport:
-        ctx = ExecutionContext(params=plan.params)
-        report = OrchestrationReport(plan=plan, context=ctx)
+class OrchestratorStep(abc.ABC):
+    """编排步骤基类 — 每个阶段实现 execute 方法"""
 
-        try:
-            self._step_provision_env(plan, ctx, report)
-            self._step_checkout(plan, ctx, report)
-            self._step_build(plan, ctx, report)
-            self._step_acquire_stimuli(plan, ctx, report)
-            self._step_execute(plan, report)
-            self._step_collect(plan, report)
-        finally:
-            self._step_teardown(ctx, report)
+    name: str = ""
 
-        return report
+    def __init__(self, container: ServiceContainer) -> None:
+        self.c = container
 
-    # ---- 各阶段实现 ----
+    @abc.abstractmethod
+    def execute(
+        self,
+        plan: OrchestrationPlan,
+        ctx: ExecutionContext,
+        report: OrchestrationReport,
+    ) -> None:
+        """执行本步骤"""
 
-    def _step_provision_env(
+
+# =========================================================================
+# 各步骤实现
+# =========================================================================
+
+
+class ProvisionEnvStep(OrchestratorStep):
+    """步骤1: 装配构建环境和执行环境"""
+
+    name = "provision_env"
+
+    def execute(
         self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
-        """步骤1: 装配构建环境和执行环境"""
         build_env = plan.build_env_name
         exe_env = plan.exe_env_name or plan.environment
         if not build_env and not exe_env:
             report.steps.append({
-                "step": "provision_env", "status": "skipped",
+                "step": self.name, "status": "skipped",
                 "detail": "未指定环境",
             })
             return
@@ -125,7 +134,7 @@ class ExecutionOrchestrator:
         )
         ctx.env_session = session
         report.steps.append({
-            "step": "provision_env", "status": "done",
+            "step": self.name, "status": "done",
             "build_env": build_env, "exe_env": exe_env,
             "session_id": session.session_id,
             "variables_count": len(session.resolved_vars),
@@ -135,85 +144,98 @@ class ExecutionOrchestrator:
             build_env, exe_env, len(session.resolved_vars),
         )
 
-    def _step_checkout(
+
+class CheckoutStep(OrchestratorStep):
+    """步骤2: 检出代码仓到本地工作空间"""
+
+    name = "checkout"
+
+    def execute(
         self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
-        """步骤2: 检出代码仓到本地工作空间"""
         if not plan.repo_names:
-            report.steps.append({
-                "step": "checkout", "status": "skipped",
-            })
+            report.steps.append({"step": self.name, "status": "skipped"})
             return
         workspaces: list[RepoWorkspace] = []
-        for name in plan.repo_names:
-            ref = plan.repo_ref_overrides.get(name, "")
-            ws = self.c.repo.checkout(name, ref_override=ref)
+        for repo_name in plan.repo_names:
+            ref = plan.repo_ref_overrides.get(repo_name, "")
+            ws = self.c.repo.checkout(repo_name, ref_override=ref)
             workspaces.append(ws)
         ctx.repos = workspaces
         statuses = {ws.spec.name: ws.status for ws in workspaces}
         report.steps.append({
-            "step": "checkout", "status": "done", "repos": statuses,
+            "step": self.name, "status": "done", "repos": statuses,
         })
         logger.info("[Step 2] 代码仓检出完成: %s", statuses)
 
-    def _step_build(
+
+class BuildStep(OrchestratorStep):
+    """步骤3: 执行构建任务，生成可执行文件或库"""
+
+    name = "build"
+
+    def execute(
         self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
-        """步骤3: 执行构建任务，生成可执行文件或库"""
         if not plan.build_names:
-            report.steps.append({
-                "step": "build", "status": "skipped",
-            })
+            report.steps.append({"step": self.name, "status": "skipped"})
             return
         env_vars = (
             ctx.env_session.resolved_vars if ctx.env_session else None
         )
         results: list[BuildResult] = []
-        for name in plan.build_names:
-            ref = plan.repo_ref_overrides.get(name, "")
-            result = self.c.build.build(name, env_vars=env_vars, repo_ref=ref)
+        for build_name in plan.build_names:
+            ref = plan.repo_ref_overrides.get(build_name, "")
+            result = self.c.build.build(build_name, env_vars=env_vars, repo_ref=ref)
             results.append(result)
         ctx.builds = results
         statuses = {r.spec.name: r.status for r in results}
         report.steps.append({
-            "step": "build", "status": "done", "builds": statuses,
+            "step": self.name, "status": "done", "builds": statuses,
         })
         logger.info("[Step 3] 构建完成: %s", statuses)
 
-    def _step_acquire_stimuli(
+
+class AcquireStimuliStep(OrchestratorStep):
+    """步骤4: 获取测试激励（输入数据/测试向量）"""
+
+    name = "acquire_stimuli"
+
+    def execute(
         self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
-        """步骤4: 获取测试激励（输入数据/测试向量）"""
         if not plan.stimulus_names:
-            report.steps.append({
-                "step": "acquire_stimuli", "status": "skipped",
-            })
+            report.steps.append({"step": self.name, "status": "skipped"})
             return
         artifacts: list[StimulusArtifact] = []
-        for name in plan.stimulus_names:
-            art = self.c.stimulus.acquire(name)
+        for stim_name in plan.stimulus_names:
+            art = self.c.stimulus.acquire(stim_name)
             artifacts.append(art)
         ctx.stimuli = artifacts
         statuses = {a.spec.name: a.status for a in artifacts}
         report.steps.append({
-            "step": "acquire_stimuli", "status": "done",
-            "stimuli": statuses,
+            "step": self.name, "status": "done", "stimuli": statuses,
         })
         logger.info("[Step 4] 激励获取完成: %s", statuses)
 
-    def _step_execute(
-        self, plan: OrchestrationPlan,
+
+class ExecuteStep(OrchestratorStep):
+    """步骤5: 执行测试用例集，收集执行结果"""
+
+    name = "execute"
+
+    def execute(
+        self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
-        """步骤5: 执行测试用例集，收集执行结果"""
         req = plan.to_run_request()
         result = self.c.run.execute(req)
         report.suite_result = result
         report.steps.append({
-            "step": "execute", "status": "done",
+            "step": self.name, "status": "done",
             "total": result.total, "passed": result.passed,
             "failed": result.failed, "errors": result.errors,
         })
@@ -222,15 +244,18 @@ class ExecutionOrchestrator:
             result.total, result.passed, result.failed, result.errors,
         )
 
-    def _step_collect(
-        self, plan: OrchestrationPlan,
+
+class CollectResultsStep(OrchestratorStep):
+    """步骤6: 收集并保存测试结果到历史记录"""
+
+    name = "collect"
+
+    def execute(
+        self, plan: OrchestrationPlan, ctx: ExecutionContext,
         report: OrchestrationReport,
     ) -> None:
-        """步骤6: 收集并保存测试结果到历史记录"""
         if report.suite_result is None:
-            report.steps.append({
-                "step": "collect", "status": "skipped",
-            })
+            report.steps.append({"step": self.name, "status": "skipped"})
             return
         env_name = plan.exe_env_name or plan.environment
         run_id = self.c.result.save(
@@ -244,15 +269,54 @@ class ExecutionOrchestrator:
         )
         report.run_id = run_id
         report.steps.append({
-            "step": "collect", "status": "done", "run_id": run_id,
+            "step": self.name, "status": "done", "run_id": run_id,
         })
         logger.info("[Step 6] 结果已收集: run_id=%s", run_id)
 
-    def _step_teardown(
-        self, ctx: ExecutionContext, report: OrchestrationReport,
+
+class TeardownStep(OrchestratorStep):
+    """步骤7: 清理环境资源，释放会话"""
+
+    name = "teardown"
+
+    def execute(
+        self, plan: OrchestrationPlan, ctx: ExecutionContext,
+        report: OrchestrationReport,
     ) -> None:
-        """步骤7: 清理环境资源，释放会话"""
         if ctx.env_session and ctx.env_session.status == "applied":
             self.c.env.release(ctx.env_session)
-        report.steps.append({"step": "teardown", "status": "done"})
+        report.steps.append({"step": self.name, "status": "done"})
         logger.info("[Step 7] 清理完成")
+
+
+# =========================================================================
+# 编排器
+# =========================================================================
+
+
+class ExecutionOrchestrator:
+    """7 步执行编排器（Step 组合，try/finally 保证 teardown）"""
+
+    def __init__(self, container: ServiceContainer | None = None) -> None:
+        self.c = container or ServiceContainer()
+        self.pipeline: list[OrchestratorStep] = [
+            ProvisionEnvStep(self.c),
+            CheckoutStep(self.c),
+            BuildStep(self.c),
+            AcquireStimuliStep(self.c),
+            ExecuteStep(self.c),
+            CollectResultsStep(self.c),
+        ]
+        self._teardown = TeardownStep(self.c)
+
+    def run(self, plan: OrchestrationPlan) -> OrchestrationReport:
+        ctx = ExecutionContext(params=plan.params)
+        report = OrchestrationReport(plan=plan, context=ctx)
+
+        try:
+            for step in self.pipeline:
+                step.execute(plan, ctx, report)
+        finally:
+            self._teardown.execute(plan, ctx, report)
+
+        return report

@@ -20,10 +20,7 @@ logger = logging.getLogger(__name__)
 class HistoryManager:
     """执行历史管理器"""
 
-    def __init__(self, history_file: str = "") -> None:
-        if not history_file:
-            from framework.core.config import get_config
-            history_file = get_config().history_file
+    def __init__(self, history_file: str) -> None:
         self.history_file = Path(history_file)
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -150,10 +147,11 @@ class HistoryManager:
 
     def submit_external(self, run_data: dict) -> dict:
         """接收外部（本地执行）提交的执行结果"""
+        from framework.core.exceptions import ValidationError
         required = ["suite", "results"]
         for field in required:
             if field not in run_data:
-                raise ValueError(f"缺少必填字段: {field}")
+                raise ValidationError(f"缺少必填字段: {field}")
 
         return self.record_run(
             suite=run_data["suite"],

@@ -22,6 +22,7 @@ from typing import Any
 
 from framework.core.history import HistoryManager
 from framework.core.models import SuiteResult, summarize_statuses
+from framework.core.pipeline import save_results
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +85,9 @@ class ResultService:
     """统一结果管理"""
 
     def __init__(
-        self, result_dir: str = "", history_file: str = "",
+        self, result_dir: str, history_file: str = "",
         storage_config: StorageConfig | None = None,
     ) -> None:
-        if not result_dir:
-            from framework.core.config import get_config
-            result_dir = get_config().result_dir
         self.result_dir = Path(result_dir)
         self.result_dir.mkdir(parents=True, exist_ok=True)
         self.history = HistoryManager(history_file=history_file)
@@ -133,12 +131,9 @@ class ResultService:
         return str(entry["run_id"])
 
     def _persist_results(self, suite_result: SuiteResult) -> None:
-        for r in suite_result.results:
-            f = self.result_dir / f"{r.name}.json"
-            f.write_text(
-                json.dumps(asdict(r), indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
+        """委托给 pipeline.save_results，消除重复的 JSON 写入逻辑"""
+        if suite_result.results:
+            save_results(suite_result.results, output_dir=str(self.result_dir))
 
     @staticmethod
     def _collect_context_dict(

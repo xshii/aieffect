@@ -248,10 +248,7 @@ class EnvService(YamlRegistry):
 
     section_key = "build_envs"
 
-    def __init__(self, registry_file: str = "") -> None:
-        if not registry_file:
-            from framework.core.config import get_config
-            registry_file = getattr(get_config(), "envs_file", "data/environments.yml")
+    def __init__(self, registry_file: str) -> None:
         super().__init__(registry_file)
         self._sessions: dict[str, EnvSession] = {}
 
@@ -263,6 +260,45 @@ class EnvService(YamlRegistry):
         """获取执行环境配置字典"""
         result: dict[str, dict[str, Any]] = self._data.setdefault("exe_envs", {})
         return result
+
+    # ---- 工厂方法（CLI/Web 共用） ----
+
+    @staticmethod
+    def create_build_spec(data: dict[str, Any]) -> BuildEnvSpec:
+        """从字典创建 BuildEnvSpec"""
+        return BuildEnvSpec(
+            name=data.get("name", ""),
+            build_env_type=data.get("build_env_type", "local"),
+            description=data.get("description", ""),
+            work_dir=data.get("work_dir", ""),
+            variables=data.get("variables", {}),
+            host=data.get("host", ""), port=data.get("port", 22),
+            user=data.get("user", ""), key_path=data.get("key_path", ""),
+        )
+
+    @staticmethod
+    def create_exe_spec(data: dict[str, Any]) -> ExeEnvSpec:
+        """从字典创建 ExeEnvSpec"""
+        tools: dict[str, ToolSpec] = {}
+        for tname, tinfo in (data.get("tools") or {}).items():
+            ti = tinfo if isinstance(tinfo, dict) else {}
+            tools[tname] = ToolSpec(
+                name=tname, version=ti.get("version", ""),
+                install_path=ti.get("install_path", ""),
+                env_vars=ti.get("env_vars", {}),
+            )
+        return ExeEnvSpec(
+            name=data.get("name", ""),
+            exe_env_type=data.get("exe_env_type", "eda"),
+            description=data.get("description", ""),
+            api_url=data.get("api_url", ""),
+            api_token=data.get("api_token", ""),
+            variables=data.get("variables", {}),
+            tools=tools,
+            licenses=data.get("licenses", {}),
+            timeout=data.get("timeout", 3600),
+            build_env_name=data.get("build_env_name", ""),
+        )
 
     # ---- 构建环境 CRUD ----
 

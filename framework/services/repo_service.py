@@ -17,11 +17,15 @@ import logging
 import re
 import subprocess
 import tarfile
+import threading
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from framework.core.exceptions import ValidationError
+if TYPE_CHECKING:
+    from framework.core.dep_manager import DepManager
+
+from framework.core.exceptions import DependencyError, ExecutionError, ValidationError
 from framework.core.models import CaseRepoBinding, RepoSpec, RepoWorkspace
 from framework.core.registry import YamlRegistry
 from framework.utils.shell import run_cmd
@@ -36,19 +40,33 @@ class RepoService(YamlRegistry):
 
     section_key = "repos"
 
-    def __init__(self, registry_file: str = "", workspace_root: str = "") -> None:
-        if not registry_file:
-            from framework.core.config import get_config
-            registry_file = getattr(get_config(), "repos_file", "data/repos.yml")
-        if not workspace_root:
-            from framework.core.config import get_config
-            workspace_root = get_config().workspace_dir
+    def __init__(
+        self, registry_file: str, workspace_root: str,
+        dep_manager: DepManager | None = None,
+    ) -> None:
         super().__init__(registry_file)
         self.workspace_root = Path(workspace_root)
         self.workspace_root.mkdir(parents=True, exist_ok=True)
+        self._cache_lock = threading.Lock()
         self._workspace_cache: dict[tuple[str, str], RepoWorkspace] = {}
+        self._dep_manager = dep_manager
 
     # ---- 注册 / CRUD ----
+
+    @staticmethod
+    def create_spec(data: dict[str, Any]) -> RepoSpec:
+        """从字典创建 RepoSpec（CLI/Web 共用工厂）"""
+        return RepoSpec(
+            name=data.get("name", ""),
+            source_type=data.get("source_type", "git"),
+            url=data.get("url", ""), ref=data.get("ref", "main"),
+            path=data.get("path", ""), tar_path=data.get("tar_path", ""),
+            tar_url=data.get("tar_url", ""), api_url=data.get("api_url", ""),
+            api_token=data.get("api_token", ""),
+            setup_cmd=data.get("setup_cmd", ""),
+            build_cmd=data.get("build_cmd", ""),
+            deps=data.get("deps", []),
+        )
 
     def register(self, spec: RepoSpec) -> dict[str, Any]:
         """注册一个代码仓"""
@@ -121,17 +139,18 @@ class RepoService(YamlRegistry):
         ref = ref_override or spec.ref
         cache_key = (name, ref)
 
-        # 复用已有工作目录
-        if shared and cache_key in self._workspace_cache:
-            cached = self._workspace_cache[cache_key]
-            if cached.status not in ("error", "pending"):
-                logger.info("复用已有工作目录: %s@%s -> %s", name, ref, cached.local_path)
-                return cached
+        with self._cache_lock:
+            # 复用已有工作目录
+            if shared and cache_key in self._workspace_cache:
+                cached = self._workspace_cache[cache_key]
+                if cached.status not in ("error", "pending"):
+                    logger.info("复用已有工作目录: %s@%s -> %s", name, ref, cached.local_path)
+                    return cached
 
-        ws = self._dispatch_checkout(spec, ref)
-        self._post_checkout(ws, spec, name)
-        self._workspace_cache[cache_key] = ws
-        return ws
+            ws = self._dispatch_checkout(spec, ref)
+            self._post_checkout(ws, spec, name)
+            self._workspace_cache[cache_key] = ws
+            return ws
 
     def _dispatch_checkout(self, spec: RepoSpec, ref: str) -> RepoWorkspace:
         """按来源类型分派检出"""
@@ -147,8 +166,8 @@ class RepoService(YamlRegistry):
         """检出后执行依赖解析和 setup/build 步骤"""
         if ws.status in ("error", "pending"):
             return
-        if spec.deps:
-            self._resolve_deps(spec.deps)
+        if spec.deps and self._dep_manager:
+            self._resolve_deps(spec.deps, self._dep_manager)
         cwd = Path(ws.local_path)
         if spec.path:
             cwd = cwd / spec.path
@@ -161,7 +180,7 @@ class RepoService(YamlRegistry):
             if spec.build_cmd:
                 run_cmd(spec.build_cmd, cwd=str(cwd), label="build")
             ws.local_path = str(cwd)
-        except RuntimeError as e:
+        except ExecutionError as e:
             ws.status = "error"
             logger.error("构建步骤失败 %s: %s", name, e)
 
@@ -272,19 +291,14 @@ class RepoService(YamlRegistry):
     # ---- 依赖解析 ----
 
     @staticmethod
-    def _resolve_deps(dep_names: list[str]) -> None:
+    def _resolve_deps(dep_names: list[str], dm: DepManager) -> None:
         """解析代码仓关联的依赖包"""
-        try:
-            from framework.core.dep_manager import DepManager
-            dm = DepManager()
-            for dep_name in dep_names:
-                try:
-                    dm.fetch(dep_name)
-                    logger.info("  依赖就绪: %s", dep_name)
-                except (OSError, ValueError, RuntimeError) as e:
-                    logger.warning("  依赖获取失败（非致命）: %s - %s", dep_name, e)
-        except (OSError, ValueError) as e:
-            logger.warning("  依赖管理器初始化失败: %s", e)
+        for dep_name in dep_names:
+            try:
+                dm.fetch(dep_name)
+                logger.info("  依赖就绪: %s", dep_name)
+            except (OSError, DependencyError, ExecutionError) as e:
+                logger.warning("  依赖获取失败（非致命）: %s - %s", dep_name, e)
 
     # ---- 工作目录管理 ----
 
@@ -322,9 +336,10 @@ class RepoService(YamlRegistry):
                 shutil.rmtree(child, ignore_errors=True)
                 count += 1
         # 清理缓存
-        self._workspace_cache = {
-            k: v for k, v in self._workspace_cache.items() if k[0] != name
-        }
+        with self._cache_lock:
+            self._workspace_cache = {
+                k: v for k, v in self._workspace_cache.items() if k[0] != name
+            }
         logger.info("已清理 %s 的 %d 个工作目录", name, count)
         return count
 

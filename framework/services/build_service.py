@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -19,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from framework.services.repo_service import RepoService
 
-from framework.core.exceptions import CaseNotFoundError, ValidationError
+from framework.core.exceptions import CaseNotFoundError, ExecutionError, ValidationError
 from framework.core.models import BuildResult, BuildSpec
 from framework.core.registry import YamlRegistry
 from framework.utils.shell import run_cmd
@@ -33,28 +34,33 @@ class BuildService(YamlRegistry):
     section_key = "builds"
 
     def __init__(
-        self, registry_file: str = "", output_root: str = "",
+        self, registry_file: str, output_root: str,
         repo_service: RepoService | None = None,
     ) -> None:
-        if not registry_file:
-            from framework.core.config import get_config
-            registry_file = getattr(get_config(), "builds_file", "data/builds.yml")
-        if not output_root:
-            from framework.core.config import get_config
-            output_root = str(Path(get_config().workspace_dir) / "builds")
         super().__init__(registry_file)
         self.output_root = Path(output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
+        self._cache_lock = threading.Lock()
         self._build_cache: dict[tuple[str, str], BuildResult] = {}
         self._repo_service = repo_service
 
     def _get_repo_service(self) -> RepoService:
-        if self._repo_service is not None:
-            return self._repo_service
-        from framework.services.repo_service import RepoService
-        return RepoService()
+        if self._repo_service is None:
+            raise ValidationError("BuildService 未注入 RepoService，请通过容器获取")
+        return self._repo_service
 
     # ---- 注册 / CRUD ----
+
+    @staticmethod
+    def create_spec(data: dict[str, Any]) -> BuildSpec:
+        """从字典创建 BuildSpec（CLI/Web 共用工厂）"""
+        return BuildSpec(
+            name=data.get("name", ""), repo_name=data.get("repo_name", ""),
+            setup_cmd=data.get("setup_cmd", ""),
+            build_cmd=data.get("build_cmd", ""),
+            clean_cmd=data.get("clean_cmd", ""),
+            output_dir=data.get("output_dir", ""),
+        )
 
     def register(self, spec: BuildSpec) -> dict[str, str]:
         """注册构建配置"""
@@ -91,9 +97,10 @@ class BuildService(YamlRegistry):
     def remove(self, name: str) -> bool:
         if not self._remove(name):
             return False
-        keys_to_remove = [k for k in self._build_cache if k[0] == name]
-        for k in keys_to_remove:
-            del self._build_cache[k]
+        with self._cache_lock:
+            keys_to_remove = [k for k in self._build_cache if k[0] == name]
+            for k in keys_to_remove:
+                del self._build_cache[k]
         logger.info("构建已移除: %s", name)
         return True
 
@@ -139,9 +146,10 @@ class BuildService(YamlRegistry):
     ) -> BuildResult | None:
         """检查构建缓存，返回缓存结果或None（未命中或force=True）"""
         cache_key = (spec.name, ref)
-        if force or cache_key not in self._build_cache:
-            return None
-        cached = self._build_cache[cache_key]
+        with self._cache_lock:
+            if force or cache_key not in self._build_cache:
+                return None
+            cached = self._build_cache[cache_key]
         if cached.status != "success":
             return None
         logger.info("构建缓存命中: %s (ref=%s)", spec.name, ref)
@@ -178,7 +186,7 @@ class BuildService(YamlRegistry):
                 run_cmd(spec.setup_cmd, cwd=work_dir, env=env, label="setup")
             if spec.build_cmd:
                 run_cmd(spec.build_cmd, cwd=work_dir, env=env, label="build")
-        except RuntimeError as e:
+        except ExecutionError as e:
             duration = time.monotonic() - start
             logger.error("构建失败 %s: %s", spec.name, e)
             return BuildResult(
@@ -193,25 +201,28 @@ class BuildService(YamlRegistry):
             spec=spec, output_path=output_path,
             status="success", duration=duration, repo_ref=effective_ref,
         )
-        self._build_cache[(spec.name, effective_ref)] = result
+        with self._cache_lock:
+            self._build_cache[(spec.name, effective_ref)] = result
         logger.info("构建完成: %s (ref=%s, %.1fs)", spec.name, effective_ref, duration)
         return result
 
     def is_cached(self, name: str, repo_ref: str = "") -> bool:
-        cached = self._build_cache.get((name, repo_ref))
+        with self._cache_lock:
+            cached = self._build_cache.get((name, repo_ref))
         return cached is not None and cached.status == "success"
 
     def invalidate_cache(self, name: str, repo_ref: str = "") -> bool:
-        if repo_ref:
-            key = (name, repo_ref)
-            if key in self._build_cache:
-                del self._build_cache[key]
-                return True
-            return False
-        keys = [k for k in self._build_cache if k[0] == name]
-        for k in keys:
-            del self._build_cache[k]
-        return len(keys) > 0
+        with self._cache_lock:
+            if repo_ref:
+                key = (name, repo_ref)
+                if key in self._build_cache:
+                    del self._build_cache[key]
+                    return True
+                return False
+            keys = [k for k in self._build_cache if k[0] == name]
+            for k in keys:
+                del self._build_cache[k]
+            return len(keys) > 0
 
     def clean(self, name: str, *, work_dir: str = "") -> bool:
         spec = self.get(name)
@@ -228,6 +239,6 @@ class BuildService(YamlRegistry):
             run_cmd(spec.clean_cmd, cwd=work_dir, label="clean")
             self.invalidate_cache(name)
             return True
-        except RuntimeError as e:
+        except ExecutionError as e:
             logger.error("清理失败 %s: %s", name, e)
             return False
